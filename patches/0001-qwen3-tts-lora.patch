@@ -1,0 +1,949 @@
+diff --git a/finetuning/bench_lora_step.py b/finetuning/bench_lora_step.py
+new file mode 100644
+index 0000000..e99c6b2
+--- /dev/null
++++ b/finetuning/bench_lora_step.py
+@@ -0,0 +1,199 @@
++# coding=utf-8
++# Copyright 2026 The Alibaba Qwen team.
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++import argparse
++import json
++import statistics
++import subprocess
++import time
++
++import torch
++from torch.utils.data import DataLoader
++from transformers import AutoConfig
++from peft import LoraConfig, TaskType, get_peft_model
++from qwen_tts.inference.qwen3_tts_model import Qwen3TTSModel
++from dataset import TTSDataset
++
++
++def _get_gpu_stats():
++    try:
++        out = subprocess.check_output(
++            [
++                "nvidia-smi",
++                "--query-gpu=utilization.gpu,memory.used",
++                "--format=csv,noheader,nounits",
++            ],
++            text=True,
++        )
++        # e.g. "23, 12567"
++        line = out.strip().splitlines()[0]
++        util_s, mem_s = [x.strip() for x in line.split(",")]
++        return float(util_s), float(mem_s)
++    except Exception:
++        return None, None
++
++
++def _pick_samples(jsonl_path, batch_size, mode):
++    with open(jsonl_path, "r", encoding="utf-8") as f:
++        if mode == "first":
++            return [json.loads(next(f)) for _ in range(batch_size)]
++        samples = []
++        for line in f:
++            obj = json.loads(line)
++            samples.append(obj)
++        samples.sort(key=lambda x: len(x.get("audio_codes", [])), reverse=True)
++        return samples[:batch_size]
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--model_path", required=True)
++    parser.add_argument("--train_jsonl", required=True)
++    parser.add_argument("--batch_size", type=int, default=1)
++    parser.add_argument("--warmup_steps", type=int, default=2)
++    parser.add_argument("--measure_steps", type=int, default=5)
++    parser.add_argument("--sample_mode", choices=["first", "longest"], default="longest")
++    parser.add_argument("--attn_implementation", default="flash_attention_2")
++    parser.add_argument("--device", default="cuda:0")
++    args = parser.parse_args()
++
++    print(f"Loading model on {args.device} ...")
++    qwen3tts = Qwen3TTSModel.from_pretrained(
++        args.model_path,
++        torch_dtype=torch.bfloat16,
++        attn_implementation=args.attn_implementation,
++        device_map=args.device,
++    )
++    config = AutoConfig.from_pretrained(args.model_path)
++
++    lora_config = LoraConfig(
++        r=16,
++        lora_alpha=32,
++        lora_dropout=0.05,
++        bias="none",
++        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
++        task_type=TaskType.CAUSAL_LM,
++    )
++    model = get_peft_model(qwen3tts.model, lora_config)
++    model.train()
++
++    device = next(model.parameters()).device
++    print(f"Using device: {device}")
++
++    samples = _pick_samples(args.train_jsonl, args.batch_size, args.sample_mode)
++    dataset = TTSDataset(samples, qwen3tts.processor, config)
++    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=dataset.collate_fn)
++    batch = next(iter(dataloader))
++
++    def to_device(x):
++        return x.to(device) if torch.is_tensor(x) else x
++
++    input_ids = to_device(batch["input_ids"])
++    codec_ids = to_device(batch["codec_ids"])
++    ref_mels = to_device(batch["ref_mels"])
++    text_embedding_mask = to_device(batch["text_embedding_mask"])
++    codec_embedding_mask = to_device(batch["codec_embedding_mask"])
++    attention_mask = to_device(batch["attention_mask"])
++    codec_0_labels = to_device(batch["codec_0_labels"])
++    codec_mask = to_device(batch["codec_mask"])
++
++    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
++
++    if torch.cuda.is_available():
++        torch.cuda.reset_peak_memory_stats()
++
++    step_times = []
++    util_samples = []
++    mem_samples = []
++
++    total_steps = args.warmup_steps + args.measure_steps
++    for step in range(total_steps):
++        start = time.perf_counter()
++
++        with torch.no_grad():
++            speaker_embedding = model.speaker_encoder(
++                ref_mels.to(dtype=next(model.parameters()).dtype, device=device)
++            ).detach()
++
++        input_text_ids = input_ids[:, :, 0]
++        input_codec_ids = input_ids[:, :, 1]
++
++        input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask
++        input_codec_embedding = model.talker.model.codec_embedding(input_codec_ids) * codec_embedding_mask
++        input_codec_embedding[:, 6, :] = speaker_embedding
++
++        input_embeddings = input_text_embedding + input_codec_embedding
++        for i in range(1, 16):
++            codec_i_embedding = model.talker.code_predictor.get_input_embeddings()[i - 1](codec_ids[:, :, i])
++            codec_i_embedding = codec_i_embedding * codec_mask.unsqueeze(-1)
++            input_embeddings = input_embeddings + codec_i_embedding
++
++        outputs = model.talker(
++            inputs_embeds=input_embeddings[:, :-1, :],
++            attention_mask=attention_mask[:, :-1],
++            labels=codec_0_labels[:, 1:],
++            output_hidden_states=True,
++        )
++
++        hidden_states = outputs.hidden_states[0][-1]
++        talker_hidden_states = hidden_states[codec_mask[:, 1:]]
++        talker_codec_ids = codec_ids[codec_mask]
++
++        _, sub_talker_loss = model.talker.forward_sub_talker_finetune(
++            talker_codec_ids, talker_hidden_states
++        )
++
++        loss = outputs.loss + sub_talker_loss
++        loss.backward()
++        optimizer.step()
++        optimizer.zero_grad()
++
++        torch.cuda.synchronize()
++        elapsed = time.perf_counter() - start
++
++        util, mem = _get_gpu_stats()
++
++        if step >= args.warmup_steps:
++            step_times.append(elapsed)
++            if util is not None:
++                util_samples.append(util)
++            if mem is not None:
++                mem_samples.append(mem)
++
++    tokens = codec_0_labels[:, 1:].numel()
++    avg_time = statistics.mean(step_times)
++    p50_time = statistics.median(step_times)
++    p90_time = statistics.quantiles(step_times, n=10)[8] if len(step_times) >= 10 else max(step_times)
++    tokens_per_sec = tokens / avg_time
++
++    max_alloc = torch.cuda.max_memory_allocated() / (1024 ** 3)
++    max_reserved = torch.cuda.max_memory_reserved() / (1024 ** 3)
++
++    print("---- Benchmark ----")
++    print(f"Batch size: {args.batch_size}")
++    print(f"Sample mode: {args.sample_mode}")
++    print(f"Tokens per step: {tokens}")
++    print(f"Avg step time: {avg_time:.3f}s (p50 {p50_time:.3f}s, p90 {p90_time:.3f}s)")
++    print(f"Tokens/sec: {tokens_per_sec:.1f}")
++    print(f"Peak VRAM allocated: {max_alloc:.2f} GB")
++    print(f"Peak VRAM reserved:  {max_reserved:.2f} GB")
++    if util_samples:
++        print(f"GPU util avg: {statistics.mean(util_samples):.1f}% (max {max(util_samples):.1f}%)")
++    if mem_samples:
++        print(f"GPU mem sample avg: {statistics.mean(mem_samples)/1024:.2f} GB (max {max(mem_samples)/1024:.2f} GB)")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/finetuning/eval_sft_12hz.py b/finetuning/eval_sft_12hz.py
+new file mode 100644
+index 0000000..8151f0e
+--- /dev/null
++++ b/finetuning/eval_sft_12hz.py
+@@ -0,0 +1,158 @@
++# coding=utf-8
++# Copyright 2026 The Alibaba Qwen team.
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++import argparse
++import json
++
++import torch
++from torch.utils.data import DataLoader
++from transformers import AutoConfig
++
++from dataset import TTSDataset
++from qwen_tts.inference.qwen3_tts_model import Qwen3TTSModel
++
++try:
++    from peft import PeftModel
++except ImportError:
++    PeftModel = None
++
++
++def _get_fallback_speaker_id(model):
++    spk_id_map = getattr(getattr(model, "config", None), "talker_config", None)
++    spk_id_map = getattr(spk_id_map, "spk_id", {}) if spk_id_map is not None else {}
++    if not spk_id_map:
++        return None
++    if 3000 in spk_id_map.values():
++        return 3000
++    # Fall back to the last entry to keep behavior deterministic.
++    return list(spk_id_map.values())[-1]
++
++
++def compute_loss(model, batch):
++    input_ids = batch["input_ids"]
++    codec_ids = batch["codec_ids"]
++    ref_mels = batch["ref_mels"]
++    text_embedding_mask = batch["text_embedding_mask"]
++    codec_embedding_mask = batch["codec_embedding_mask"]
++    attention_mask = batch["attention_mask"]
++    codec_0_labels = batch["codec_0_labels"]
++    codec_mask = batch["codec_mask"]
++
++    with torch.no_grad():
++        if getattr(model, "speaker_encoder", None) is not None:
++            speaker_embedding = model.speaker_encoder(
++                ref_mels.to(dtype=next(model.parameters()).dtype, device=next(model.parameters()).device)
++            ).detach()
++        else:
++            speaker_id = _get_fallback_speaker_id(model)
++            if speaker_id is None:
++                raise RuntimeError("No speaker_encoder and no speaker id found for evaluation.")
++            weight = model.talker.model.codec_embedding.weight
++            speaker_embedding = weight[speaker_id].unsqueeze(0).expand(ref_mels.shape[0], -1)
++
++    input_text_ids = input_ids[:, :, 0]
++    input_codec_ids = input_ids[:, :, 1]
++
++    input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask
++    input_codec_embedding = model.talker.model.codec_embedding(input_codec_ids) * codec_embedding_mask
++    input_codec_embedding[:, 6, :] = speaker_embedding
++
++    input_embeddings = input_text_embedding + input_codec_embedding
++
++    for i in range(1, 16):
++        codec_i_embedding = model.talker.code_predictor.get_input_embeddings()[i - 1](codec_ids[:, :, i])
++        codec_i_embedding = codec_i_embedding * codec_mask.unsqueeze(-1)
++        input_embeddings = input_embeddings + codec_i_embedding
++
++    outputs = model.talker(
++        inputs_embeds=input_embeddings[:, :-1, :],
++        attention_mask=attention_mask[:, :-1],
++        labels=codec_0_labels[:, 1:],
++        output_hidden_states=True,
++    )
++
++    hidden_states = outputs.hidden_states[0][-1]
++    talker_hidden_states = hidden_states[codec_mask[:, 1:]]
++    talker_codec_ids = codec_ids[codec_mask]
++
++    _, sub_talker_loss = model.talker.forward_sub_talker_finetune(
++        talker_codec_ids, talker_hidden_states
++    )
++
++    return outputs.loss + sub_talker_loss
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--base_model_path", required=True)
++    parser.add_argument("--adapter_path", default=None)
++    parser.add_argument("--test_jsonl", required=True)
++    parser.add_argument("--batch_size", type=int, default=4)
++    parser.add_argument("--attn_implementation", type=str, default="flash_attention_2")
++    parser.add_argument("--device", default="cuda:0")
++    parser.add_argument("--dtype", choices=["bf16", "fp16", "fp32"], default="bf16")
++    parser.add_argument("--merge_lora", action="store_true")
++    parser.add_argument("--limit", type=int, default=None)
++    parser.add_argument("--report_every", type=int, default=50)
++    args = parser.parse_args()
++
++    dtype_map = {
++        "bf16": torch.bfloat16,
++        "fp16": torch.float16,
++        "fp32": torch.float32,
++    }
++
++    tts = Qwen3TTSModel.from_pretrained(
++        args.base_model_path,
++        torch_dtype=dtype_map[args.dtype],
++        attn_implementation=args.attn_implementation,
++        device_map=args.device,
++    )
++
++    model = tts.model
++    if args.adapter_path:
++        if PeftModel is None:
++            raise SystemExit("peft is required to load LoRA adapters (pip install peft).")
++        peft_model = PeftModel.from_pretrained(model, args.adapter_path)
++        model = peft_model.merge_and_unload() if args.merge_lora else peft_model
++
++    model.eval()
++
++    config = AutoConfig.from_pretrained(args.base_model_path)
++    with open(args.test_jsonl, "r", encoding="utf-8") as f:
++        data = [json.loads(line) for line in f]
++    if args.limit is not None:
++        data = data[: args.limit]
++
++    dataset = TTSDataset(data, tts.processor, config)
++    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=dataset.collate_fn)
++
++    losses = []
++    with torch.no_grad():
++        for step, batch in enumerate(dataloader):
++            loss = compute_loss(model, batch)
++            losses.append(loss.item())
++            if args.report_every and step % args.report_every == 0:
++                print(f"step {step} | loss {loss.item():.4f}")
++
++    if not losses:
++        print("No samples to evaluate.")
++        return
++    avg_loss = sum(losses) / len(losses)
++    print(f"Test loss avg: {avg_loss:.4f} over {len(losses)} batches")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/finetuning/infer_lora_custom_voice.py b/finetuning/infer_lora_custom_voice.py
+new file mode 100644
+index 0000000..01002b1
+--- /dev/null
++++ b/finetuning/infer_lora_custom_voice.py
+@@ -0,0 +1,139 @@
++# coding=utf-8
++# Copyright 2026 The Alibaba Qwen team.
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++import argparse
++import json
++import os
++
++import soundfile as sf
++import torch
++from safetensors.torch import load_file
++
++from qwen_tts import Qwen3TTSModel
++
++try:
++    from peft import PeftModel
++except ImportError as exc:
++    raise SystemExit(
++        "peft is required for LoRA inference. Install it with: pip install peft"
++    ) from exc
++
++
++def _resolve_core_model(model):
++    if hasattr(model, "talker"):
++        return model
++    if hasattr(model, "model") and hasattr(model.model, "talker"):
++        return model.model
++    if hasattr(model, "base_model"):
++        base = model.base_model
++        if hasattr(base, "talker"):
++            return base
++        if hasattr(base, "model") and hasattr(base.model, "talker"):
++            return base.model
++    return model
++
++
++def _apply_speaker_config(core_model, adapter_dir, speaker_name, speaker_id=None):
++    config_path = os.path.join(adapter_dir, "config.json")
++    if os.path.isfile(config_path):
++        with open(config_path, "r", encoding="utf-8") as f:
++            config_dict = json.load(f)
++        talker_config = config_dict.get("talker_config", {})
++        spk_id_map = talker_config.get("spk_id", {})
++        spk_is_dialect = talker_config.get("spk_is_dialect", {})
++        if isinstance(spk_id_map, dict):
++            core_model.config.talker_config.spk_id.update(spk_id_map)
++        if isinstance(spk_is_dialect, dict):
++            core_model.config.talker_config.spk_is_dialect.update(spk_is_dialect)
++
++    if speaker_name not in core_model.config.talker_config.spk_id and speaker_id is not None:
++        core_model.config.talker_config.spk_id[speaker_name] = speaker_id
++        core_model.config.talker_config.spk_is_dialect[speaker_name] = False
++
++    core_model.config.tts_model_type = "custom_voice"
++    core_model.tts_model_type = "custom_voice"
++    core_model.supported_speakers = core_model.config.talker_config.spk_id.keys()
++
++
++def _apply_speaker_embedding(core_model, adapter_dir, speaker_name, speaker_embedding_path=None):
++    embedding_path = speaker_embedding_path or os.path.join(
++        adapter_dir, "speaker_embedding.safetensors"
++    )
++    if not os.path.isfile(embedding_path):
++        raise FileNotFoundError(f"Missing speaker embedding: {embedding_path}")
++
++    payload = load_file(embedding_path)
++    if "target_speaker_embedding" not in payload:
++        raise KeyError(f"'target_speaker_embedding' not found in {embedding_path}")
++
++    spk_id = core_model.config.talker_config.spk_id[speaker_name]
++    weight = core_model.talker.model.codec_embedding.weight
++    weight.data[spk_id] = payload["target_speaker_embedding"].to(
++        device=weight.device, dtype=weight.dtype
++    )
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--base_model_path", required=True)
++    parser.add_argument("--adapter_path", required=True)
++    parser.add_argument("--speaker_name", default="female01")
++    parser.add_argument("--speaker_id", type=int, default=3000)
++    parser.add_argument("--speaker_embedding_path", default=None)
++    parser.add_argument("--text", default="She said she would be here by noon.")
++    parser.add_argument("--language", default="auto")
++    parser.add_argument("--output_wav", default="output_lora.wav")
++    parser.add_argument("--device", default="cuda:0")
++    parser.add_argument("--dtype", choices=["bf16", "fp16", "fp32"], default="bf16")
++    parser.add_argument("--attn_implementation", default="flash_attention_2")
++    parser.add_argument("--no_merge_lora", action="store_true")
++    args = parser.parse_args()
++
++    dtype_map = {
++        "bf16": torch.bfloat16,
++        "fp16": torch.float16,
++        "fp32": torch.float32,
++    }
++
++    tts = Qwen3TTSModel.from_pretrained(
++        args.base_model_path,
++        device_map=args.device,
++        torch_dtype=dtype_map[args.dtype],
++        attn_implementation=args.attn_implementation,
++    )
++
++    peft_model = PeftModel.from_pretrained(tts.model, args.adapter_path)
++    if args.no_merge_lora:
++        tts.model = peft_model
++    else:
++        tts.model = peft_model.merge_and_unload()
++
++    core_model = _resolve_core_model(tts.model)
++    _apply_speaker_config(core_model, args.adapter_path, args.speaker_name, args.speaker_id)
++    _apply_speaker_embedding(
++        core_model, args.adapter_path, args.speaker_name, args.speaker_embedding_path
++    )
++    core_model.eval()
++
++    wavs, sr = tts.generate_custom_voice(
++        text=args.text,
++        speaker=args.speaker_name,
++        language=args.language,
++    )
++    sf.write(args.output_wav, wavs[0], sr)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/finetuning/sft_12hz.py b/finetuning/sft_12hz.py
+index 9ed8c48..f56c4c1 100644
+--- a/finetuning/sft_12hz.py
++++ b/finetuning/sft_12hz.py
+@@ -28,6 +28,71 @@ from torch.utils.data import DataLoader
+ from transformers import AutoConfig
+ 
+ target_speaker_embedding = None
++
++
++def compute_loss(model, batch):
++    global target_speaker_embedding
++
++    input_ids = batch['input_ids']
++    codec_ids = batch['codec_ids']
++    ref_mels = batch['ref_mels']
++    text_embedding_mask = batch['text_embedding_mask']
++    codec_embedding_mask = batch['codec_embedding_mask']
++    attention_mask = batch['attention_mask']
++    codec_0_labels = batch['codec_0_labels']
++    codec_mask = batch['codec_mask']
++
++    with torch.no_grad():
++        speaker_embedding = model.speaker_encoder(ref_mels.to(model.device).to(model.dtype)).detach()
++    if model.training and target_speaker_embedding is None:
++        target_speaker_embedding = speaker_embedding
++
++    input_text_ids = input_ids[:, :, 0]
++    input_codec_ids = input_ids[:, :, 1]
++
++    input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask
++    input_codec_embedding = model.talker.model.codec_embedding(input_codec_ids) * codec_embedding_mask
++    input_codec_embedding[:, 6, :] = speaker_embedding
++
++    input_embeddings = input_text_embedding + input_codec_embedding
++
++    for i in range(1, 16):
++        codec_i_embedding = model.talker.code_predictor.get_input_embeddings()[i - 1](codec_ids[:, :, i])
++        codec_i_embedding = codec_i_embedding * codec_mask.unsqueeze(-1)
++        input_embeddings = input_embeddings + codec_i_embedding
++
++    outputs = model.talker(
++        inputs_embeds=input_embeddings[:, :-1, :],
++        attention_mask=attention_mask[:, :-1],
++        labels=codec_0_labels[:, 1:],
++        output_hidden_states=True
++    )
++
++    hidden_states = outputs.hidden_states[0][-1]
++    talker_hidden_states = hidden_states[codec_mask[:, 1:]]
++    talker_codec_ids = codec_ids[codec_mask]
++
++    _, sub_talker_loss = model.talker.forward_sub_talker_finetune(talker_codec_ids, talker_hidden_states)
++
++    return outputs.loss + sub_talker_loss
++
++
++def evaluate(model, dataloader, accelerator):
++    model.eval()
++    losses = []
++    with torch.no_grad():
++        for batch in dataloader:
++            loss = compute_loss(model, batch)
++            gathered = accelerator.gather_for_metrics(loss.detach())
++            if gathered.ndim == 0:
++                gathered = gathered.unsqueeze(0)
++            losses.append(gathered)
++    if not losses:
++        return None
++    val_loss = torch.cat(losses).mean().item()
++    return val_loss
++
++
+ def train():
+     global target_speaker_embedding
+ 
+@@ -39,6 +104,9 @@ def train():
+     parser.add_argument("--lr", type=float, default=2e-5)
+     parser.add_argument("--num_epochs", type=int, default=3)
+     parser.add_argument("--speaker_name", type=str, default="speaker_test")
++    parser.add_argument("--val_jsonl", type=str, default=None)
++    parser.add_argument("--eval_batch_size", type=int, default=None)
++    parser.add_argument("--eval_every", type=int, default=1)
+     args = parser.parse_args()
+ 
+     accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")
+@@ -56,12 +124,23 @@ def train():
+     train_data = [json.loads(line) for line in train_data]
+     dataset = TTSDataset(train_data, qwen3tts.processor, config)
+     train_dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=dataset.collate_fn)
++    val_dataloader = None
++    if args.val_jsonl:
++        val_data = [json.loads(line) for line in open(args.val_jsonl)]
++        val_dataset = TTSDataset(val_data, qwen3tts.processor, config)
++        eval_bs = args.eval_batch_size or args.batch_size
++        val_dataloader = DataLoader(val_dataset, batch_size=eval_bs, shuffle=False, collate_fn=val_dataset.collate_fn)
+ 
+     optimizer = AdamW(qwen3tts.model.parameters(), lr=args.lr, weight_decay=0.01)
+ 
+-    model, optimizer, train_dataloader = accelerator.prepare(
+-        qwen3tts.model, optimizer, train_dataloader
+-    )
++    if val_dataloader is not None:
++        model, optimizer, train_dataloader, val_dataloader = accelerator.prepare(
++            qwen3tts.model, optimizer, train_dataloader, val_dataloader
++        )
++    else:
++        model, optimizer, train_dataloader = accelerator.prepare(
++            qwen3tts.model, optimizer, train_dataloader
++        )
+ 
+     num_epochs = args.num_epochs
+     model.train()
+@@ -69,48 +148,7 @@ def train():
+     for epoch in range(num_epochs):
+         for step, batch in enumerate(train_dataloader):
+             with accelerator.accumulate(model):
+-
+-                input_ids = batch['input_ids']
+-                codec_ids = batch['codec_ids']
+-                ref_mels = batch['ref_mels']
+-                text_embedding_mask = batch['text_embedding_mask']
+-                codec_embedding_mask = batch['codec_embedding_mask']
+-                attention_mask = batch['attention_mask']
+-                codec_0_labels = batch['codec_0_labels']
+-                codec_mask = batch['codec_mask']
+-
+-                speaker_embedding = model.speaker_encoder(ref_mels.to(model.device).to(model.dtype)).detach()
+-                if target_speaker_embedding is None:
+-                    target_speaker_embedding = speaker_embedding
+-
+-                input_text_ids = input_ids[:, :, 0]
+-                input_codec_ids = input_ids[:, :, 1]
+-
+-                input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask
+-                input_codec_embedding = model.talker.model.codec_embedding(input_codec_ids) * codec_embedding_mask
+-                input_codec_embedding[:, 6, :] = speaker_embedding
+-
+-                input_embeddings = input_text_embedding + input_codec_embedding
+-
+-                for i in range(1, 16):
+-                    codec_i_embedding = model.talker.code_predictor.get_input_embeddings()[i - 1](codec_ids[:, :, i])
+-                    codec_i_embedding = codec_i_embedding * codec_mask.unsqueeze(-1)
+-                    input_embeddings = input_embeddings + codec_i_embedding
+-
+-                outputs = model.talker(
+-                    inputs_embeds=input_embeddings[:, :-1, :],
+-                    attention_mask=attention_mask[:, :-1],
+-                    labels=codec_0_labels[:, 1:],
+-                    output_hidden_states=True
+-                )
+-
+-                hidden_states = outputs.hidden_states[0][-1]
+-                talker_hidden_states = hidden_states[codec_mask[:, 1:]]
+-                talker_codec_ids = codec_ids[codec_mask]
+-
+-                sub_talker_logits, sub_talker_loss = model.talker.forward_sub_talker_finetune(talker_codec_ids, talker_hidden_states)
+-
+-                loss = outputs.loss + sub_talker_loss
++                loss = compute_loss(model, batch)
+ 
+                 accelerator.backward(loss)
+ 
+@@ -123,6 +161,12 @@ def train():
+             if step % 10 == 0:
+                 accelerator.print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
+ 
++        if val_dataloader is not None and (epoch + 1) % args.eval_every == 0:
++            val_loss = evaluate(model, val_dataloader, accelerator)
++            if accelerator.is_main_process and val_loss is not None:
++                accelerator.print(f"Epoch {epoch} | Val Loss: {val_loss:.4f}")
++            model.train()
++
+         if accelerator.is_main_process:
+             output_dir = os.path.join(args.output_model_path, f"checkpoint-epoch-{epoch}")
+             shutil.copytree(MODEL_PATH, output_dir, dirs_exist_ok=True)
+diff --git a/finetuning/sft_12hz_lora.py b/finetuning/sft_12hz_lora.py
+new file mode 100644
+index 0000000..8e9f4b9
+--- /dev/null
++++ b/finetuning/sft_12hz_lora.py
+@@ -0,0 +1,253 @@
++# coding=utf-8
++# Copyright 2026 The Alibaba Qwen team.
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++import argparse
++import json
++import os
++
++import torch
++from accelerate import Accelerator
++from dataset import TTSDataset
++from qwen_tts.inference.qwen3_tts_model import Qwen3TTSModel
++from safetensors.torch import save_file
++from torch.optim import AdamW
++from torch.utils.data import DataLoader
++from transformers import AutoConfig
++
++try:
++    from peft import LoraConfig, TaskType, get_peft_model, PeftModel
++except ImportError as exc:
++    raise SystemExit(
++        "peft is required for LoRA fine-tuning. Install it with: pip install peft"
++    ) from exc
++
++target_speaker_embedding = None
++
++
++def _parse_list(value: str) -> list[str]:
++    return [item.strip() for item in value.split(",") if item.strip()]
++
++
++def compute_loss(model, batch):
++    global target_speaker_embedding
++
++    input_ids = batch["input_ids"]
++    codec_ids = batch["codec_ids"]
++    ref_mels = batch["ref_mels"]
++    text_embedding_mask = batch["text_embedding_mask"]
++    codec_embedding_mask = batch["codec_embedding_mask"]
++    attention_mask = batch["attention_mask"]
++    codec_0_labels = batch["codec_0_labels"]
++    codec_mask = batch["codec_mask"]
++
++    with torch.no_grad():
++        speaker_embedding = model.speaker_encoder(
++            ref_mels.to(dtype=next(model.parameters()).dtype, device=next(model.parameters()).device)
++        ).detach()
++
++    if model.training and target_speaker_embedding is None:
++        target_speaker_embedding = speaker_embedding.detach().to("cpu")
++
++    input_text_ids = input_ids[:, :, 0]
++    input_codec_ids = input_ids[:, :, 1]
++
++    input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask
++    input_codec_embedding = model.talker.model.codec_embedding(input_codec_ids) * codec_embedding_mask
++    input_codec_embedding[:, 6, :] = speaker_embedding
++
++    input_embeddings = input_text_embedding + input_codec_embedding
++
++    for i in range(1, 16):
++        codec_i_embedding = model.talker.code_predictor.get_input_embeddings()[i - 1](codec_ids[:, :, i])
++        codec_i_embedding = codec_i_embedding * codec_mask.unsqueeze(-1)
++        input_embeddings = input_embeddings + codec_i_embedding
++
++    outputs = model.talker(
++        inputs_embeds=input_embeddings[:, :-1, :],
++        attention_mask=attention_mask[:, :-1],
++        labels=codec_0_labels[:, 1:],
++        output_hidden_states=True,
++    )
++
++    hidden_states = outputs.hidden_states[0][-1]
++    talker_hidden_states = hidden_states[codec_mask[:, 1:]]
++    talker_codec_ids = codec_ids[codec_mask]
++
++    _, sub_talker_loss = model.talker.forward_sub_talker_finetune(
++        talker_codec_ids, talker_hidden_states
++    )
++
++    return outputs.loss + sub_talker_loss
++
++
++def evaluate(model, dataloader, accelerator):
++    model.eval()
++    losses = []
++    with torch.no_grad():
++        for batch in dataloader:
++            loss = compute_loss(model, batch)
++            gathered = accelerator.gather_for_metrics(loss.detach())
++            if gathered.ndim == 0:
++                gathered = gathered.unsqueeze(0)
++            losses.append(gathered)
++    if not losses:
++        return None
++    val_loss = torch.cat(losses).mean().item()
++    return val_loss
++
++
++def train():
++    global target_speaker_embedding
++
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--init_model_path", type=str, default="Qwen/Qwen3-TTS-12Hz-1.7B-Base")
++    parser.add_argument("--output_model_path", type=str, default="output_lora")
++    parser.add_argument("--train_jsonl", type=str, required=True)
++    parser.add_argument("--batch_size", type=int, default=2)
++    parser.add_argument("--lr", type=float, default=2e-5)
++    parser.add_argument("--num_epochs", type=int, default=3)
++    parser.add_argument("--start_epoch", type=int, default=0)
++    parser.add_argument("--resume_adapter", type=str, default=None)
++    parser.add_argument("--speaker_name", type=str, default="speaker_test")
++    parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
++    parser.add_argument("--mixed_precision", type=str, default="bf16", choices=["no", "fp16", "bf16"])
++    parser.add_argument("--attn_implementation", type=str, default="flash_attention_2")
++    parser.add_argument("--save_every", type=int, default=1)
++    parser.add_argument("--lora_rank", type=int, default=16)
++    parser.add_argument("--lora_alpha", type=int, default=32)
++    parser.add_argument("--lora_dropout", type=float, default=0.05)
++    parser.add_argument("--lora_bias", type=str, default="none", choices=["none", "all", "lora_only"])
++    parser.add_argument(
++        "--lora_target_modules",
++        type=str,
++        default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
++    )
++    parser.add_argument("--val_jsonl", type=str, default=None)
++    parser.add_argument("--eval_batch_size", type=int, default=None)
++    parser.add_argument("--eval_every", type=int, default=1)
++    args = parser.parse_args()
++
++    accelerator = Accelerator(
++        gradient_accumulation_steps=args.gradient_accumulation_steps,
++        mixed_precision=None if args.mixed_precision == "no" else args.mixed_precision,
++        log_with="tensorboard",
++    )
++
++    MODEL_PATH = args.init_model_path
++
++    qwen3tts = Qwen3TTSModel.from_pretrained(
++        MODEL_PATH,
++        torch_dtype=torch.bfloat16,
++        attn_implementation=args.attn_implementation,
++    )
++    config = AutoConfig.from_pretrained(MODEL_PATH)
++
++    if args.resume_adapter:
++        model = PeftModel.from_pretrained(
++            qwen3tts.model,
++            args.resume_adapter,
++            is_trainable=True,
++        )
++    else:
++        lora_config = LoraConfig(
++            r=args.lora_rank,
++            lora_alpha=args.lora_alpha,
++            lora_dropout=args.lora_dropout,
++            bias=args.lora_bias,
++            target_modules=_parse_list(args.lora_target_modules),
++            task_type=TaskType.CAUSAL_LM,
++        )
++        model = get_peft_model(qwen3tts.model, lora_config)
++    if accelerator.is_main_process:
++        model.print_trainable_parameters()
++
++    train_data = [json.loads(line) for line in open(args.train_jsonl).readlines()]
++    dataset = TTSDataset(train_data, qwen3tts.processor, config)
++    train_dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=dataset.collate_fn)
++    val_dataloader = None
++    if args.val_jsonl:
++        val_data = [json.loads(line) for line in open(args.val_jsonl)]
++        val_dataset = TTSDataset(val_data, qwen3tts.processor, config)
++        eval_bs = args.eval_batch_size or args.batch_size
++        val_dataloader = DataLoader(val_dataset, batch_size=eval_bs, shuffle=False, collate_fn=val_dataset.collate_fn)
++
++    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
++
++    if val_dataloader is not None:
++        model, optimizer, train_dataloader, val_dataloader = accelerator.prepare(
++            model, optimizer, train_dataloader, val_dataloader
++        )
++    else:
++        model, optimizer, train_dataloader = accelerator.prepare(
++            model, optimizer, train_dataloader
++        )
++
++    num_epochs = args.num_epochs
++    model.train()
++
++    for local_epoch in range(num_epochs):
++        epoch = args.start_epoch + local_epoch
++        for step, batch in enumerate(train_dataloader):
++            with accelerator.accumulate(model):
++                loss = compute_loss(model, batch)
++
++                accelerator.backward(loss)
++
++                if accelerator.sync_gradients:
++                    accelerator.clip_grad_norm_(model.parameters(), 1.0)
++
++                optimizer.step()
++                optimizer.zero_grad()
++
++            if step % 10 == 0:
++                accelerator.print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
++
++        if val_dataloader is not None and (local_epoch + 1) % args.eval_every == 0:
++            val_loss = evaluate(model, val_dataloader, accelerator)
++            if accelerator.is_main_process and val_loss is not None:
++                accelerator.print(f"Epoch {epoch} | Val Loss: {val_loss:.4f}")
++            model.train()
++
++        if accelerator.is_main_process and (local_epoch + 1) % args.save_every == 0:
++            output_dir = os.path.join(args.output_model_path, f"checkpoint-epoch-{epoch}")
++            os.makedirs(output_dir, exist_ok=True)
++
++            unwrapped_model = accelerator.unwrap_model(model)
++            unwrapped_model.save_pretrained(output_dir, safe_serialization=True)
++
++            input_config_file = os.path.join(MODEL_PATH, "config.json")
++            output_config_file = os.path.join(output_dir, "config.json")
++            with open(input_config_file, "r", encoding="utf-8") as f:
++                config_dict = json.load(f)
++            config_dict["tts_model_type"] = "custom_voice"
++            talker_config = config_dict.get("talker_config", {})
++            talker_config.setdefault("spk_id", {})
++            talker_config.setdefault("spk_is_dialect", {})
++            talker_config["spk_id"][args.speaker_name] = 3000
++            talker_config["spk_is_dialect"][args.speaker_name] = False
++            config_dict["talker_config"] = talker_config
++
++            with open(output_config_file, "w", encoding="utf-8") as f:
++                json.dump(config_dict, f, indent=2, ensure_ascii=False)
++
++            if target_speaker_embedding is not None:
++                save_file(
++                    {"target_speaker_embedding": target_speaker_embedding[0]},
++                    os.path.join(output_dir, "speaker_embedding.safetensors"),
++                )
++
++
++if __name__ == "__main__":
++    train()
