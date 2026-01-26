@@ -1,7 +1,7 @@
 # Qwen3‑TTS LoRA Fine‑Tuning (Companion Repo)
 
-This repo provides **LoRA fine‑tuning scripts and patches** for Qwen3‑TTS without forking the upstream project.
-It is designed to be used alongside the official Qwen3‑TTS repo.
+**Qwen3‑TTS LoRA fine‑tuning** tools for custom voice adaptation, designed as a companion repo to the official Qwen3‑TTS project.
+This repo provides **LoRA fine‑tuning scripts and patches** without forking upstream.
 
 - Upstream repo: https://github.com/QwenLM/Qwen3-TTS
 - Tested upstream commit: `0c6a7cbb6c8421a46332f8c2434c7825c4c855ef`
