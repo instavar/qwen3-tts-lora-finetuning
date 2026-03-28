@@ -157,6 +157,22 @@ Based on our IMDA NSC FEMALE\_01 runs:
 | LoRA scale (inference) | 0.3-0.35 | Scale 1.0 over-steers; sweep first |
 | Sample rate | 24 kHz | Non-negotiable — codec enforces this |
 
-## License
+## Alternatives
+
+This repo provides the **LoRA fine-tuning path** with production-validated pitfalls. Depending on your needs, other options may be a better fit:
+
+| Approach | Repo | Best for |
+|----------|------|----------|
+| **LoRA fine-tuning** (this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Fast iteration, adapter-based voice adaptation, production deployment with scale control |
+| **Full SFT** (official) | [QwenLM/Qwen3-TTS/finetuning](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) | Maximum quality when you can afford full-weight updates. Note: upstream `sft_12hz.py` has known bugs (see pitfalls #1-#2 above) |
+| **Full SFT + WebUI** | [mozi1924/Qwen3-TTS-EasyFinetuning](https://github.com/mozi1924/Qwen3-TTS-EasyFinetuning) | Automated preprocessing + Gradio interface. Good for users who want a GUI workflow. Does not include LoRA support or the upstream bug fixes |
+| **ComfyUI integration** | [DarioFT/ComfyUI-Qwen3-TTS](https://github.com/DarioFT/ComfyUI-Qwen3-TTS) | Fine-tuning and inference within ComfyUI node workflows |
+| **Audiobook pipeline + LoRA** | [Finrandojin/alexandria-audiobook](https://github.com/Finrandojin/alexandria-audiobook) | LoRA training embedded in a Gradio audiobook workflow with per-line style control |
+
+If you need full SFT with a friendlier interface and don't need LoRA, `mozi1924/Qwen3-TTS-EasyFinetuning` is worth evaluating. If you need LoRA with documented pitfalls and inference-time scale control, that's what this repo provides.
+
 
 Apache-2.0
+
+
+## License
