@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- Regenerated the `sft_12hz.py` patch context against the README-pinned upstream
+  commit `0c6a7cbb6c8421a46332f8c2434c7825c4c855ef`. The patch now applies cleanly
+  instead of failing at line 69 because of a stale sub-talker loss coefficient.
+
 ## v0.3.0
 
 ### Bug fixes (Tier 1 — closes credibility gap between documented pitfalls and shipped fixes)
