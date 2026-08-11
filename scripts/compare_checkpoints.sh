@@ -10,6 +10,7 @@
 set -euo pipefail
 
 QWEN_DIR="${QWEN_DIR:?set QWEN_DIR}"
+PYTHON="${PYTHON:-python3}"
 BASE_MODEL="${BASE_MODEL:?set BASE_MODEL}"
 CHECKPOINTS="${CHECKPOINTS:?set CHECKPOINTS (space-separated adapter dirs)}"
 OUT_DIR="${OUT_DIR:-./checkpoint_comparison_$(date +%Y%m%d_%H%M%S)}"
@@ -39,7 +40,7 @@ for ckpt in ${CHECKPOINTS}; do
       text="${TEXTS[$i]}"
       out_wav="${OUT_DIR}/${ckpt_name}_scale${scale}_text${i}.wav"
 
-      python "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
+      "${PYTHON}" "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
         --base_model_path "${BASE_MODEL}" \
         --adapter_path "${ckpt}" \
         --speaker_name "${SPEAKER_NAME}" \

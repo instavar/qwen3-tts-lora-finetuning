@@ -2,6 +2,7 @@
 set -euo pipefail
 
 QWEN_DIR="${QWEN_DIR:?set QWEN_DIR}"
+PYTHON="${PYTHON:-python3}"
 BASE_MODEL="${BASE_MODEL:?set BASE_MODEL}"
 ADAPTER_DIR="${ADAPTER_DIR:?set ADAPTER_DIR}"
 OUT_WAV="${OUT_WAV:-output.wav}"
@@ -10,7 +11,7 @@ SPEAKER_NAME="${SPEAKER_NAME:-speaker}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 LORA_SCALE="${LORA_SCALE:-0.3}"
 
-python "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
+"${PYTHON}" "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
   --base_model_path "${BASE_MODEL}" \
   --adapter_path "${ADAPTER_DIR}" \
   --speaker_name "${SPEAKER_NAME}" \

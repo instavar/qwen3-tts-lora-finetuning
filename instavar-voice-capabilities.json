@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0.0",
+  "repository": {
+    "slug": "instavar/qwen3-tts-lora-finetuning",
+    "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
+    "evidence_revision": "3fd0c34e874e9728c85a14ff2d7a5686dd76474a"
+  },
+  "model": {
+    "family": "Qwen3-TTS",
+    "upstream_repository": "QwenLM/Qwen3-TTS"
+  },
+  "adaptation": {
+    "lora": {
+      "status": "supported",
+      "evidence": [
+        {
+          "level": "validated",
+          "ref": "README.md#what-the-patch-adds",
+          "claim": "The companion records a real LoRA training, adapter inference, checkpoint, and scale-sweep path."
+        }
+      ]
+    },
+    "full_sft": {
+      "status": "upstream_only",
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "README.md#alternatives",
+          "claim": "The README routes full SFT to the current official upstream implementation."
+        }
+      ]
+    }
+  },
+  "runtimes": [
+    {
+      "id": "pytorch",
+      "status": "supported",
+      "artifact_mode": "adapter",
+      "streaming": false,
+      "evidence": [
+        {
+          "level": "validated",
+          "ref": "README.md#inference",
+          "claim": "The pinned companion path loads a LoRA adapter with explicit scale control and generates audio."
+        }
+      ]
+    },
+    {
+      "id": "openai_compatible_http",
+      "status": "unsupported",
+      "artifact_mode": "adapter",
+      "streaming": false,
+      "evidence": [],
+      "notes": "No HTTP serving implementation is maintained in this focused companion."
+    }
+  ],
+  "evaluation": {
+    "prompt_pack": {
+      "id": "instavar-singapore-english",
+      "version": "1.0.0",
+      "sha256": "79491bec271c0aa1ea1b7dd92dd976476959f1607859a67451652f7c12e56a45"
+    },
+    "objective_metrics": [
+      "asr_word_error_rate",
+      "speaker_embedding_similarity",
+      "invalid_output_rate",
+      "duration_seconds",
+      "sample_rate_hz",
+      "silence_fraction",
+      "clipping_fraction",
+      "real_time_factor",
+      "peak_memory_bytes"
+    ],
+    "listening_criteria": [
+      "speaker_identity",
+      "singapore_english_accent_fidelity",
+      "lexical_pronunciation",
+      "cadence_variation",
+      "long_form_monotony",
+      "naturalness",
+      "emotion_and_instruction_obedience",
+      "artifact_severity",
+      "listening_fatigue"
+    ]
+  },
+  "rights": {
+    "code": "The companion code is Apache-2.0; see LICENSE. Upstream code and weights remain separate rights surfaces.",
+    "weights": "Pin and review the upstream model-weight terms separately from this repository's code license.",
+    "dataset": "Record dataset provenance, permitted use, and speaker consent before training.",
+    "generated_output": "Review the model and dataset terms for the intended generated-output use."
+  },
+  "known_gaps": [
+    "Revalidate the patch against current official Qwen3-TTS fine-tuning before claiming incremental necessity.",
+    "No alternative runtime has passed adapter-aware conformance.",
+    "The frozen Singapore English blind listening suite has not been run in this repository."
+  ]
+}
