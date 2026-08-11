@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "qwen3-tts-female01-lora-epoch10",
+  "repository": "instavar/qwen3-tts-lora-finetuning",
+  "model_family": "Qwen3-TTS",
+  "adaptation_mode": "lora",
+  "evidence_revision": "3fd0c34e874e9728c85a14ff2d7a5686dd76474a",
+  "observed_date": "2026-03-30",
+  "source_refs": [
+    "README.md#training",
+    "README.md#inference",
+    "CHANGELOG.md",
+    "reports/runtime-smoke-2026-08-12.md"
+  ],
+  "stage_evidence": {
+    "preflight": {
+      "status": "not_recorded",
+      "evidence_refs": [],
+      "boundary": "The run did not preserve a strict grouped corpus audit and production-path preflight artifact."
+    },
+    "training": {
+      "status": "validated",
+      "evidence_refs": ["README.md#training"],
+      "boundary": "The LoRA patch completed a real FEMALE_01 training run with epoch checkpoints."
+    },
+    "inference": {
+      "status": "validated",
+      "evidence_refs": [
+        "README.md#inference",
+        "reports/runtime-smoke-2026-08-12.md"
+      ],
+      "boundary": "The epoch-10 adapter loaded with explicit scale control and generated held-out audio. Its weights and frozen neutral-brief output now have recorded hashes."
+    },
+    "evaluation": {
+      "status": "observed",
+      "evidence_refs": [
+        "CHANGELOG.md",
+        "reports/runtime-smoke-2026-08-12.md"
+      ],
+      "boundary": "Epoch and adapter-scale sweeps were performed, and the frozen neutral brief had ASR WER 0.0. The complete objective suite and blind listening remain incomplete."
+    },
+    "packaging": {
+      "status": "validated",
+      "evidence_refs": ["README.md#inference"],
+      "boundary": "Adapter-only checkpoint loading is validated, but no promoted immutable package was recorded."
+    }
+  },
+  "contract_migration": {
+    "experiment_manifest": "blocked",
+    "artifact_package": "blocked",
+    "blockers": [
+      "The historical corpus split hashes are not preserved in the public evidence.",
+      "The selected adapter is linked only to one short objective prompt, not the complete frozen suite and listening report."
+    ]
+  }
+}
