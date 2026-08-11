@@ -186,7 +186,10 @@ This repo provides the **LoRA fine-tuning path** with production-validated pitfa
 If you need full SFT with a friendlier interface and don't need LoRA, `mozi1924/Qwen3-TTS-EasyFinetuning` is worth evaluating. If you need LoRA with documented pitfalls and inference-time scale control, that's what this repo provides.
 
 
+## License
+
 Apache-2.0
 
+## Instavar Voice conformance
 
-## License
+[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) declares the adaptation, runtime, evaluation, and rights boundaries supported by this companion. CI validates it against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). See [`INSTAVAR_VOICE_CONFORMANCE.md`](INSTAVAR_VOICE_CONFORMANCE.md) for the evidence interpretation rules and local validation command.

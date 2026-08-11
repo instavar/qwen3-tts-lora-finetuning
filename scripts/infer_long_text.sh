@@ -11,6 +11,7 @@
 set -euo pipefail
 
 QWEN_DIR="${QWEN_DIR:?set QWEN_DIR}"
+PYTHON="${PYTHON:-python3}"
 BASE_MODEL="${BASE_MODEL:?set BASE_MODEL}"
 ADAPTER_DIR="${ADAPTER_DIR:?set ADAPTER_DIR}"
 TEXT_FILE="${TEXT_FILE:?set TEXT_FILE (path to text file, one sentence per line)}"
@@ -36,7 +37,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   chunk_wav="${TMPDIR}/chunk_$(printf '%04d' ${chunk_idx}).wav"
   seed=$((BASE_SEED + chunk_idx))
 
-  python "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
+  "${PYTHON}" "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
     --base_model_path "${BASE_MODEL}" \
     --adapter_path "${ADAPTER_DIR}" \
     --speaker_name "${SPEAKER_NAME}" \

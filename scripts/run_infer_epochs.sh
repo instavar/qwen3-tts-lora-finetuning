@@ -8,6 +8,7 @@
 set -euo pipefail
 
 QWEN_DIR="${QWEN_DIR:?set QWEN_DIR}"
+PYTHON="${PYTHON:-python3}"
 BASE_MODEL="${BASE_MODEL:?set BASE_MODEL}"
 ADAPTER_ROOT="${ADAPTER_ROOT:?set ADAPTER_ROOT}"
 OUT_DIR="${OUT_DIR:-./epoch_samples_$(date +%Y%m%d_%H%M%S)}"
@@ -29,7 +30,7 @@ for adapter in "${ADAPTER_ROOT}"/checkpoint-epoch-*; do
   out_wav="${OUT_DIR}/epoch_${epoch}.wav"
 
   echo "Epoch ${epoch}..."
-  python "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
+  "${PYTHON}" "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
     --base_model_path "${BASE_MODEL}" \
     --adapter_path "${adapter}" \
     --speaker_name "${SPEAKER_NAME}" \

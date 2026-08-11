@@ -2,11 +2,28 @@
 set -euo pipefail
 
 QWEN_DIR="${QWEN_DIR:?set QWEN_DIR}"
+PYTHON="${PYTHON:-python3}"
 
 INIT_MODEL_PATH="${INIT_MODEL_PATH:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}"
 OUTPUT_DIR="${OUTPUT_DIR:?set OUTPUT_DIR}"
 TRAIN_JSONL="${TRAIN_JSONL:?set TRAIN_JSONL}"
 VAL_JSONL="${VAL_JSONL:-}"
+TEST_JSONL="${TEST_JSONL:-}"
+
+if [[ "${AUDIT_CORPUS:-0}" == "1" ]]; then
+  : "${VAL_JSONL:?set VAL_JSONL when AUDIT_CORPUS=1}"
+  : "${TEST_JSONL:?set TEST_JSONL when AUDIT_CORPUS=1}"
+  : "${INSTAVAR_VOICE_EVAL_DIR:?set INSTAVAR_VOICE_EVAL_DIR to the pinned instavar-voice-evaluation checkout}"
+  audit_args=(
+    --split "train=${TRAIN_JSONL}"
+    --split "validation=${VAL_JSONL}"
+    --split "test=${TEST_JSONL}"
+  )
+  if [[ -n "${CORPUS_GROUP_FIELD:-}" ]]; then
+    audit_args+=(--group-field "${CORPUS_GROUP_FIELD}")
+  fi
+  "${PYTHON}" "${INSTAVAR_VOICE_EVAL_DIR}/main.py" audit-corpus "${audit_args[@]}"
+fi
 
 BATCH_SIZE="${BATCH_SIZE:-4}"
 LR="${LR:-2e-6}"
@@ -22,12 +39,12 @@ LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
 LORA_BIAS="${LORA_BIAS:-none}"
 LORA_TARGET_MODULES="${LORA_TARGET_MODULES:-q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj}"
 
-VAL_ARGS=""
-if [ -n "${VAL_JSONL}" ]; then
-  VAL_ARGS="--val_jsonl ${VAL_JSONL}"
+VAL_ARGS=()
+if [[ -n "${VAL_JSONL}" ]]; then
+  VAL_ARGS=(--val_jsonl "${VAL_JSONL}")
 fi
 
-python "${QWEN_DIR}/finetuning/sft_12hz_lora.py" \
+"${PYTHON}" "${QWEN_DIR}/finetuning/sft_12hz_lora.py" \
   --init_model_path "${INIT_MODEL_PATH}" \
   --output_model_path "${OUTPUT_DIR}" \
   --train_jsonl "${TRAIN_JSONL}" \
@@ -43,4 +60,4 @@ python "${QWEN_DIR}/finetuning/sft_12hz_lora.py" \
   --lora_dropout "${LORA_DROPOUT}" \
   --lora_bias "${LORA_BIAS}" \
   --lora_target_modules "${LORA_TARGET_MODULES}" \
-  ${VAL_ARGS}
+  "${VAL_ARGS[@]}"

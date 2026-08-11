@@ -1,0 +1,26 @@
+name: Instavar Voice contract
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  capability-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out companion repository
+        uses: actions/checkout@v5
+      - name: Check out pinned evaluation contract
+        uses: actions/checkout@v5
+        with:
+          repository: instavar/instavar-voice-evaluation
+          ref: ba1e0bd5275349bb7c9f59b99bed2799f182cdc7
+          path: .instavar-voice-evaluation
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate repository capability manifest
+        run: python .instavar-voice-evaluation/main.py validate-repository "$GITHUB_WORKSPACE"
