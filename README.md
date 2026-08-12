@@ -134,6 +134,26 @@ bash scripts/run_bench.sh
 
 ## Utility scripts
 
+### Frozen multi-prompt evaluation
+
+Run every Qwen row from an Instavar Voice generation plan while loading the
+base model and adapter once:
+
+```bash
+python scripts/run_evaluation_suite.py \
+  --qwen-dir /path/to/Qwen3-TTS \
+  --base-model /path/to/Qwen3-TTS-12Hz-1.7B-Base \
+  --adapter /path/to/checkpoint-epoch-10 \
+  --generation-plan evaluation/generation-plan.json \
+  --candidate-id qwen3-epoch10 \
+  --output-dir evaluation/qwen3-epoch10
+```
+
+The runner records one observation for every planned attempt, including
+failures, and writes audio under the plan's expected path. It does not run ASR,
+speaker similarity, or human listening and therefore does not make a quality
+claim.
+
 | Script | Purpose |
 |--------|----------|
 | `scripts/run_lora_train.sh` | Training launcher with validated config |

@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+import ast
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).parents[1]
+
+
+class EvaluationSuiteContractTests(unittest.TestCase):
+    def test_runner_loads_model_once_and_records_every_attempt(self) -> None:
+        source = (ROOT / "scripts" / "run_evaluation_suite.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        self.assertEqual(source.count("Qwen3TTSModel.from_pretrained"), 1)
+        self.assertIn("generation-observations.json", source)
+        self.assertIn("expected_audio_path", source)
+        self.assertTrue(any(isinstance(node, ast.For) for node in ast.walk(tree)))
+
+    def test_single_inference_forwards_generation_cap(self) -> None:
+        patch = (ROOT / "patches" / "0001-qwen3-tts-lora.patch").read_text(encoding="utf-8")
+        self.assertIn("+        max_new_tokens=args.max_new_tokens,", patch)
+
+
+if __name__ == "__main__":
+    unittest.main()
