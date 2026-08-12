@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `2088146501081138b87e8e398eda610a392c0d4d` to create
+revision `8feadf7bbda75abe1c305c63e362c41b86451cda` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `2088146501081138b87e8e398eda610a392c0d4d` before
+with evaluator revision `8feadf7bbda75abe1c305c63e362c41b86451cda` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -278,6 +278,11 @@ Version 0.26 adds deterministic per-rater presentation schedules that
 counterbalance candidate precedence within each prompt and seed. Aggregation
 recomputes the private audit, requires the scheduled pseudonymous rater set,
 and keeps order, fatigue, carryover, and reviewer-compliance limits explicit.
+Version 0.27 exports one privacy-preserving packet per pseudonymous rater and
+binds criterion-major presentation logs plus ratings into canonical submission
+receipts. Aggregation reconstructs each packet, rejects forged metadata, and
+records missing reviewers or cells as attrition. Receipt hashes establish
+content integrity, not reviewer identity, delivery, attention, or independence.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
