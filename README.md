@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `6fa431f6ab6bb9867a5fc210a187523012323ecb` to create
+revision `022c16a822ee4393dae9ce295199de59fecd4d43` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `6fa431f6ab6bb9867a5fc210a187523012323ecb` before
+with evaluator revision `022c16a822ee4393dae9ce295199de59fecd4d43` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -254,9 +254,10 @@ Apache-2.0
 
 [`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) declares the adaptation, runtime, evaluation, and rights boundaries supported by this companion. CI validates it against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). See [`INSTAVAR_VOICE_CONFORMANCE.md`](INSTAVAR_VOICE_CONFORMANCE.md) for the evidence interpretation rules and local validation command.
 
-The pinned evaluator also provides schema 1.3 frozen speaker-reference
-assignments, fixed per-reference aggregation, and embedding-value binding. A
-producer must commit or otherwise timestamp the assignment plan before
-generation for stronger chronology evidence. This companion does not bundle a
-speaker encoder or execute that external stage. Runtime-bound observations alone
-are not speaker-quality evidence.
+The pinned evaluator provides schema 1.3 frozen speaker-reference assignments
+and the optional schema 1.4 SpeechBrain ECAPA execution path. This companion
+does not bundle ECAPA weights or dependencies and does not invoke the learned
+metric automatically. Run it explicitly after generation with trusted,
+content-addressed checkpoints and a preregistered reference plan. Runtime-bound
+observations or same-recording smoke scores alone are not speaker-quality
+evidence.
