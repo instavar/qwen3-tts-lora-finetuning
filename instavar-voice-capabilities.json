@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "repository": {
     "slug": "instavar/qwen3-tts-lora-finetuning",
     "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
@@ -18,7 +18,74 @@
           "ref": "README.md#what-the-patch-adds",
           "claim": "The companion records a real LoRA training, adapter inference, checkpoint, and scale-sweep path."
         }
-      ]
+      ],
+      "lifecycle": {
+        "corpus_audit": {
+          "status": "not_recorded",
+          "evidence": [],
+          "boundary": "The historical run did not preserve a strict grouped corpus-audit artifact."
+        },
+        "training": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "README.md#training",
+              "claim": "A real FEMALE_01 LoRA run completed and wrote epoch checkpoints."
+            }
+          ],
+          "boundary": "One historical run does not establish convergence across datasets or current upstream revisions."
+        },
+        "checkpoint_save": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "README.md#training",
+              "claim": "The training path preserved adapter checkpoints by epoch."
+            }
+          ],
+          "boundary": "Saved checkpoints still require immutable package provenance."
+        },
+        "fresh_process_reload": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "README.md#inference",
+              "claim": "The selected adapter reloaded with explicit scale control."
+            }
+          ],
+          "boundary": "The recorded reload does not establish alternative-runtime compatibility."
+        },
+        "held_out_inference": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "reports/runtime-smoke-2026-08-12.md",
+              "claim": "The epoch-10 adapter generated all 21 frozen runtime rows."
+            }
+          ],
+          "boundary": "Valid audio does not establish identity, accent, cadence, or naturalness."
+        },
+        "evaluation": {
+          "status": "smoke_tested",
+          "evidence": [
+            {
+              "level": "smoke_tested",
+              "ref": "reports/runtime-smoke-2026-08-12.md",
+              "claim": "Runtime coverage and bounded objective checks were recorded."
+            }
+          ],
+          "boundary": "The selected adapter has no matched base-model matrix or complete blind ratings."
+        },
+        "packaging": {
+          "status": "blocked",
+          "evidence": [],
+          "boundary": "Promotion packaging is blocked by incomplete rights, comparison, and listening evidence."
+        }
+      }
     },
     "full_sft": {
       "status": "upstream_only",
@@ -106,7 +173,16 @@
       "emotion_and_instruction_obedience",
       "artifact_severity",
       "listening_fatigue"
-    ]
+    ],
+    "matched_comparison": {
+      "status": "blocked",
+      "baseline_candidate": "qwen3-tts-base",
+      "adapted_candidate": "qwen3-tts-epoch-10",
+      "blockers": [
+        "No frozen base-model observation matrix exists for the same prompts and seeds.",
+        "Blind listening ratings are incomplete."
+      ]
+    }
   },
   "rights": {
     "code": "The companion code is Apache-2.0; see LICENSE. Upstream code and weights remain separate rights surfaces.",
