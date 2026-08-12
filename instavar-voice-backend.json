@@ -12,6 +12,7 @@
     { "name": "TRAIN_JSONL", "purpose": "Training manifest with precomputed Qwen audio codes." },
     { "name": "VAL_JSONL", "purpose": "Held-out validation manifest from the same grouped corpus split." },
     { "name": "TEST_JSONL", "purpose": "Held-out test manifest from the same grouped corpus split." },
+    { "name": "DATASET_LINEAGE", "purpose": "Content-addressed receipt binding audited splits to the manifests consumed by training." },
     { "name": "SELECTED_ADAPTER_NAME", "purpose": "Single safe child directory created by training and selected for reload." },
     { "name": "GENERATION_PLAN", "purpose": "Frozen Instavar Voice generation plan containing this candidate." },
     { "name": "CANDIDATE_ID", "purpose": "Candidate identifier present in the frozen generation plan." }

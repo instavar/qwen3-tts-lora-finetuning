@@ -197,6 +197,29 @@ def _verify_source_revisions(qwen_dir: Path) -> dict[str, Any]:
     return {"companion_revision": companion_revision, **patch_evidence}
 
 
+def _verify_dataset_lineage() -> dict[str, Any]:
+    from instavar_voice_lab.lineage import verify_dataset_lineage
+
+    document = json.loads(_required_path("DATASET_LINEAGE").read_text(encoding="utf-8"))
+    train = _required_path("TRAIN_JSONL")
+    validation = _required_path("VAL_JSONL")
+    test = _required_path("TEST_JSONL")
+    return verify_dataset_lineage(
+        document,
+        producer_revision=_capture(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT),
+        inputs={
+            "raw_train": (train, "file"),
+            "raw_validation": (validation, "file"),
+            "raw_test": (test, "file"),
+        },
+        outputs={
+            "training_train": (train, "file"),
+            "training_validation": (validation, "file"),
+            "training_test": (test, "file"),
+        },
+    )
+
+
 def _preflight() -> None:
     from instavar_voice_lab.corpus import audit_corpus
 
@@ -209,6 +232,7 @@ def _preflight() -> None:
     if missing:
         raise FileNotFoundError("Qwen companion patches are missing: " + ", ".join(missing))
     source_revisions = _verify_source_revisions(qwen_dir)
+    lineage = _verify_dataset_lineage()
     splits = {
         "train": _required_path("TRAIN_JSONL"),
         "validation": _required_path("VAL_JSONL"),
@@ -236,11 +260,13 @@ def _preflight() -> None:
             "qwen_dir": str(qwen_dir),
             "base_model": os.environ["BASE_MODEL"],
             "source_revisions": source_revisions,
+            "dataset_lineage": lineage,
         },
     )
 
 
 def _train() -> None:
+    _verify_dataset_lineage()
     work_dir = _work_dir()
     output_dir = work_dir / "train" / "output"
     environment = os.environ.copy()
@@ -311,6 +337,7 @@ def _package() -> None:
         "evaluation-bundle.tar": work_dir / "evaluate" / "evaluation-bundle.tar",
         "experiment-manifest.json": _required_path("INSTAVAR_VOICE_EXPERIMENT_MANIFEST"),
         "generation-plan.json": _required_path("GENERATION_PLAN"),
+        "dataset-lineage.json": _required_path("DATASET_LINEAGE"),
     }
     records: list[dict[str, Any]] = []
     for name, source in sources.items():
@@ -337,6 +364,8 @@ def run(stage: str) -> None:
     if stage not in STAGES:
         raise ValueError(f"unknown lifecycle stage: {stage}")
     {"preflight": _preflight, "train": _train, "infer": _infer, "evaluate": _evaluate, "package": _package}[stage]()
+    if stage in {"preflight", "train"}:
+        _verify_dataset_lineage()
     _write_json(_stage_result(), {"schema_version": "1.0.0", "stage": stage, "status": "passed"})
 
 

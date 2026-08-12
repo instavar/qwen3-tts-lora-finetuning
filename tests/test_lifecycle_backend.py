@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from instavar_voice_lab.lineage import build_dataset_lineage
+
 
 ROOT = Path(__file__).parents[1]
 SPEC = importlib.util.spec_from_file_location("qwen_lifecycle", ROOT / "scripts" / "instavar_voice_lifecycle.py")
@@ -98,12 +100,36 @@ class LifecycleBackendTests(unittest.TestCase):
             work_dir = root / "work"
             (work_dir / "preflight").mkdir(parents=True)
             result = work_dir / "preflight" / "stage-result.json"
+            revision = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            lineage = root / "dataset-lineage.json"
+            lineage.write_text(
+                json.dumps(
+                    build_dataset_lineage(
+                        lineage_id="qwen-fixture-v1",
+                        producer_repository="instavar/qwen3-tts-lora-finetuning",
+                        producer_revision=revision,
+                        inputs={
+                            "raw_train": (Path(manifests["train"]), "file"),
+                            "raw_validation": (Path(manifests["validation"]), "file"),
+                            "raw_test": (Path(manifests["test"]), "file"),
+                        },
+                        outputs={
+                            "training_train": (Path(manifests["train"]), "file"),
+                            "training_validation": (Path(manifests["validation"]), "file"),
+                            "training_test": (Path(manifests["test"]), "file"),
+                        },
+                    )
+                )
+            )
             environment = {
                 "QWEN_DIR": str(qwen_dir.parent),
                 "BASE_MODEL": str(root / "base-model"),
                 "TRAIN_JSONL": manifests["train"],
                 "VAL_JSONL": manifests["validation"],
                 "TEST_JSONL": manifests["test"],
+                "DATASET_LINEAGE": str(lineage),
                 "SELECTED_ADAPTER_NAME": "checkpoint-epoch-3",
                 "GENERATION_PLAN": str(plan),
                 "CANDIDATE_ID": "candidate",
@@ -111,7 +137,7 @@ class LifecycleBackendTests(unittest.TestCase):
                 "INSTAVAR_VOICE_STAGE_RESULT": str(result),
             }
             revision_evidence = {
-                "companion_revision": "a" * 40,
+                "companion_revision": revision,
                 "upstream_revision": "b" * 40,
                 "patch_sha256": "c" * 64,
                 "patched_paths": ["finetuning/sft_12hz_lora.py"],
@@ -125,7 +151,17 @@ class LifecycleBackendTests(unittest.TestCase):
             self.assertEqual(report["status"], "passed")
             self.assertEqual(report["generation_rows"], 1)
             self.assertEqual(report["source_revisions"], revision_evidence)
+            self.assertEqual(report["dataset_lineage"]["lineage_id"], "qwen-fixture-v1")
             self.assertEqual(json.loads(result.read_text())["stage"], "preflight")
+
+            Path(manifests["train"]).write_text(
+                json.dumps({"audio": str(root / "train.wav"), "text": "changed"}) + "\n"
+            )
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                self.assertRaisesRegex(ValueError, "raw_train"),
+            ):
+                LIFECYCLE._verify_dataset_lineage()
 
     def test_package_bundles_adapter_evaluation_and_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -139,10 +175,13 @@ class LifecycleBackendTests(unittest.TestCase):
             experiment.write_text("{}\n")
             plan = root / "plan.json"
             plan.write_text("{}\n")
+            lineage = root / "dataset-lineage.json"
+            lineage.write_text("{}\n")
             result = work_dir / "package" / "stage-result.json"
             environment = {
                 "CANDIDATE_ID": "candidate",
                 "GENERATION_PLAN": str(plan),
+                "DATASET_LINEAGE": str(lineage),
                 "INSTAVAR_VOICE_EXPERIMENT_MANIFEST": str(experiment),
                 "INSTAVAR_VOICE_WORK_DIR": str(work_dir),
                 "INSTAVAR_VOICE_STAGE_RESULT": str(result),
@@ -154,6 +193,7 @@ class LifecycleBackendTests(unittest.TestCase):
             self.assertIn("package/selected-adapter.tar", names)
             self.assertIn("package/evaluation-bundle.tar", names)
             self.assertIn("package/experiment-manifest.json", names)
+            self.assertIn("package/dataset-lineage.json", names)
             self.assertIn("package/generation-plan.json", names)
             self.assertIn("package/package-manifest.json", names)
 
