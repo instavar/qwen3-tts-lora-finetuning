@@ -136,6 +136,7 @@ def main() -> int:
             torch.cuda.synchronize()
         started = time.perf_counter()
         observation = {
+            "observation_schema_version": "1.0.0",
             "sample_id": row["sample_id"],
             "candidate_id": row["candidate_id"],
             "prompt_id": row["prompt_id"],

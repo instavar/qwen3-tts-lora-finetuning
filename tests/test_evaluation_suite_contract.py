@@ -18,6 +18,7 @@ class EvaluationSuiteContractTests(unittest.TestCase):
         self.assertIn("artifact set id and sha256 must be provided together", source)
         self.assertIn('"runtime_id": args.runtime_id', source)
         self.assertIn('"artifact_set_sha256": args.artifact_set_sha256', source)
+        self.assertIn('"observation_schema_version": "1.0.0"', source)
         self.assertTrue(any(isinstance(node, ast.For) for node in ast.walk(tree)))
 
     def test_single_inference_forwards_generation_cap(self) -> None:
