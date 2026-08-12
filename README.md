@@ -134,6 +134,32 @@ bash scripts/run_bench.sh
 
 ## Utility scripts
 
+### Executable Instavar Voice lifecycle
+
+[`instavar-voice-backend.json`](instavar-voice-backend.json) binds this
+repository's LoRA and PyTorch declarations to a real five-stage backend. The
+wrapper audits train, validation, and test manifests, runs the existing LoRA
+launcher, archives one explicitly selected adapter, reloads it in a fresh
+process, executes the frozen generation plan, and copies the byte-identical
+adapter archive into the package stage.
+
+Validate the recipe with the pinned evaluator before a GPU run:
+
+```bash
+python /path/to/instavar-voice-evaluation/main.py \
+  validate-backend instavar-voice-backend.json
+```
+
+The required environment names and purposes live in the backend file. Use a
+new empty work directory for every attempt. `SELECTED_ADAPTER_NAME` must be one
+child directory created under the training output, such as
+`checkpoint-epoch-3`. Preflight also requires the experiment's upstream and
+Instavar revisions to match the active checkouts. It verifies every patched
+Qwen file against a temporary Git index containing pinned upstream plus
+`patches/0001-qwen3-tts-lora.patch`, and rejects unrelated dirty paths. A passed
+lifecycle proves that the declared commands and artifacts completed without
+mutation. It does not prove perceptual improvement.
+
 ### Frozen multi-prompt evaluation
 
 Run every Qwen row from an Instavar Voice generation plan while loading the
