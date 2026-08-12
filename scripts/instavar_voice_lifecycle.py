@@ -245,8 +245,8 @@ def _preflight() -> None:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     candidate_id = os.environ["CANDIDATE_ID"]
     rows = [row for row in plan.get("samples", []) if row.get("candidate_id") == candidate_id]
-    if plan.get("schema_version") != "1.0.0" or not rows:
-        raise ValueError("GENERATION_PLAN must be schema 1.0.0 and contain CANDIDATE_ID rows")
+    if plan.get("schema_version") not in {"1.0.0", "1.1.0"} or not rows:
+        raise ValueError("GENERATION_PLAN must be schema 1.0.0 or 1.1.0 and contain CANDIDATE_ID rows")
     selected_name = _safe_child_name(os.environ["SELECTED_ADAPTER_NAME"])
     _write_json(
         _work_dir() / "preflight" / "preflight.json",
@@ -323,8 +323,49 @@ def _evaluate() -> None:
         os.environ.get("SPEAKER_NAME", "speaker"),
         "--lora-scale",
         os.environ.get("LORA_SCALE", "0.3"),
+        "--allow-invalid-output",
     ]
     _run(command)
+    raw_observations = output_dir / "generation-observations.json"
+    receipt = output_dir / "generation-attempt-receipt.json"
+    bound_observations = output_dir / "objective-observations.json"
+    plan = _required_path("GENERATION_PLAN")
+    producer_revision = _capture(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT)
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "instavar_voice_lab.cli",
+            "build-generation-attempt-receipt",
+            str(raw_observations),
+            "--plan",
+            str(plan),
+            "--audio-base-dir",
+            str(output_dir),
+            "--producer-name",
+            "qwen3-evaluation-runner",
+            "--producer-revision",
+            producer_revision,
+            "--output",
+            str(receipt),
+        ]
+    )
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "instavar_voice_lab.cli",
+            "apply-generation-attempt-receipt",
+            str(raw_observations),
+            str(receipt),
+            "--plan",
+            str(plan),
+            "--audio-base-dir",
+            str(output_dir),
+            "--output",
+            str(bound_observations),
+        ]
+    )
     _archive_directory(output_dir, work_dir / "evaluate" / "evaluation-bundle.tar", arcname="evaluation")
 
 

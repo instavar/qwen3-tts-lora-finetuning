@@ -19,7 +19,16 @@ class EvaluationSuiteContractTests(unittest.TestCase):
         self.assertIn('"runtime_id": args.runtime_id', source)
         self.assertIn('"artifact_set_sha256": args.artifact_set_sha256', source)
         self.assertIn('"observation_schema_version": "1.0.0"', source)
+        self.assertIn("allow-invalid-output", source)
+        self.assertIn('not in {"1.0.0", "1.1.0"}', source)
+        self.assertNotIn("max_memory_allocated()) if torch.cuda.is_available() else 0", source)
         self.assertTrue(any(isinstance(node, ast.For) for node in ast.walk(tree)))
+
+    def test_lifecycle_binds_runtime_attempt_evidence_before_archiving(self) -> None:
+        source = (ROOT / "scripts" / "instavar_voice_lifecycle.py").read_text(encoding="utf-8")
+        self.assertIn("build-generation-attempt-receipt", source)
+        self.assertIn("apply-generation-attempt-receipt", source)
+        self.assertIn("objective-observations.json", source)
 
     def test_single_inference_forwards_generation_cap(self) -> None:
         patch = (ROOT / "patches" / "0001-qwen3-tts-lora.patch").read_text(encoding="utf-8")

@@ -181,10 +181,17 @@ failures, and writes audio under the plan's expected path. It does not run ASR,
 speaker similarity, or human listening and therefore does not make a quality
 claim.
 
+The executable lifecycle passes `--allow-invalid-output` so invalid generations
+remain evidence instead of aborting before packaging. It then uses evaluator
+revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` to create
+`generation-attempt-receipt.json` and the runtime-bound
+`objective-observations.json`. Timing and memory from the raw generation file
+must not be used for a version 1.1 comparison before that binding step.
+
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `7a88f11114dca3d23ffe99892b55ac6c7b3c7490` before
+with evaluator revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |

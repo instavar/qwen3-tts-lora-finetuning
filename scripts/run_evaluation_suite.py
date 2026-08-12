@@ -43,14 +43,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lora-scale", type=float, default=0.3)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--no-merge-lora", action="store_true")
+    parser.add_argument(
+        "--allow-invalid-output",
+        action="store_true",
+        help="return success after recording every planned attempt even when an output is invalid",
+    )
     return parser.parse_args()
 
 
 def read_plan(path: Path, candidate_id: str) -> list[dict]:
     with path.open(encoding="utf-8") as source:
         plan = json.load(source)
-    if plan.get("schema_version") != "1.0.0":
-        raise ValueError("generation plan schema_version must equal 1.0.0")
+    if plan.get("schema_version") not in {"1.0.0", "1.1.0"}:
+        raise ValueError("generation plan schema_version must equal 1.0.0 or 1.1.0")
     rows = [row for row in plan.get("samples", []) if row.get("candidate_id") == candidate_id]
     if not rows:
         raise ValueError(f"generation plan has no rows for candidate {candidate_id!r}")
@@ -100,6 +105,9 @@ def runtime_artifact_fields(args: argparse.Namespace) -> dict[str, str]:
 
 def main() -> int:
     args = parse_args()
+    uses_cuda = args.device.split(":", 1)[0].casefold() == "cuda"
+    if uses_cuda and not torch.cuda.is_available():
+        raise RuntimeError("CUDA runtime was requested but is unavailable")
     artifact_fields = runtime_artifact_fields(args)
     rows = read_plan(args.generation_plan, args.candidate_id)
     finetuning_dir = args.qwen_dir.resolve() / "finetuning"
@@ -131,7 +139,7 @@ def main() -> int:
         output = args.output_dir / row["expected_audio_path"]
         output.parent.mkdir(parents=True, exist_ok=True)
         set_seed(int(row["seed"]))
-        if torch.cuda.is_available():
+        if uses_cuda:
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.synchronize()
         started = time.perf_counter()
@@ -156,7 +164,7 @@ def main() -> int:
                 max_new_tokens=args.max_new_tokens,
             )
             sf.write(output, wavs[0], sample_rate)
-            if torch.cuda.is_available():
+            if uses_cuda:
                 torch.cuda.synchronize()
             elapsed = time.perf_counter() - started
             info = sf.info(output)
@@ -165,16 +173,27 @@ def main() -> int:
                     "valid": info.frames > 0,
                     "audio_path": str(output),
                     "audio_sha256": sha256(output),
-                    "audio_duration_seconds": float(info.duration),
+                    **({"audio_duration_seconds": float(info.duration)} if info.duration > 0 else {}),
                     "generation_seconds": elapsed,
-                    "peak_memory_bytes": int(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else 0,
+                    **(
+                        {"peak_memory_bytes": int(torch.cuda.max_memory_allocated())}
+                        if uses_cuda
+                        else {}
+                    ),
                     "instruction_applied": bool(row.get("instruction")),
                 }
             )
         except Exception as error:
+            if uses_cuda:
+                torch.cuda.synchronize()
             observation.update(
                 {
                     "generation_seconds": time.perf_counter() - started,
+                    **(
+                        {"peak_memory_bytes": int(torch.cuda.max_memory_allocated())}
+                        if uses_cuda
+                        else {}
+                    ),
                     "error_type": type(error).__name__,
                     "error": str(error),
                 }
@@ -182,7 +201,7 @@ def main() -> int:
         observations.append(observation)
         write_observations(args.output_dir / "generation-observations.json", observations)
 
-    return 0 if all(row["valid"] for row in observations) else 1
+    return 0 if args.allow_invalid_output or all(row["valid"] for row in observations) else 1
 
 
 if __name__ == "__main__":
