@@ -8,6 +8,7 @@ import hashlib
 import importlib
 import json
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -18,6 +19,9 @@ import torch
 from peft import PeftModel
 
 
+IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qwen-dir", type=Path, required=True)
@@ -25,6 +29,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--generation-plan", type=Path, required=True)
     parser.add_argument("--candidate-id", required=True)
+    parser.add_argument("--runtime-id", default="pytorch")
+    parser.add_argument("--artifact-set-id")
+    parser.add_argument("--artifact-set-sha256")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--speaker-name", default="female01")
     parser.add_argument("--speaker-id", type=int, default=3000)
@@ -71,8 +78,29 @@ def write_observations(path: Path, rows: list[dict]) -> None:
     path.write_text(json.dumps(rows, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def runtime_artifact_fields(args: argparse.Namespace) -> dict[str, str]:
+    if not IDENTIFIER_RE.fullmatch(args.runtime_id):
+        raise ValueError("runtime id must be a lowercase machine-readable identifier")
+    if bool(args.artifact_set_id) != bool(args.artifact_set_sha256):
+        raise ValueError("artifact set id and sha256 must be provided together")
+    fields = {"runtime_id": args.runtime_id}
+    if args.artifact_set_id:
+        if not IDENTIFIER_RE.fullmatch(args.artifact_set_id):
+            raise ValueError("artifact set id must be a lowercase machine-readable identifier")
+        if not re.fullmatch(r"[0-9a-f]{64}", args.artifact_set_sha256):
+            raise ValueError("artifact set sha256 must be a lowercase SHA-256 digest")
+        fields.update(
+            {
+                "artifact_set_id": args.artifact_set_id,
+                "artifact_set_sha256": args.artifact_set_sha256,
+            }
+        )
+    return fields
+
+
 def main() -> int:
     args = parse_args()
+    artifact_fields = runtime_artifact_fields(args)
     rows = read_plan(args.generation_plan, args.candidate_id)
     finetuning_dir = args.qwen_dir.resolve() / "finetuning"
     if not finetuning_dir.is_dir():
@@ -116,6 +144,7 @@ def main() -> int:
             "requested_text": row["text"],
             "valid": False,
             "runtime": "qwen3_tts_pytorch_cuda_adapter",
+            **artifact_fields,
         }
         try:
             wavs, sample_rate = tts.generate_custom_voice(

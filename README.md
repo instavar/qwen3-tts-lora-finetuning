@@ -172,6 +172,7 @@ python scripts/run_evaluation_suite.py \
   --adapter /path/to/checkpoint-epoch-10 \
   --generation-plan evaluation/generation-plan.json \
   --candidate-id qwen3-epoch10 \
+  --runtime-id pytorch \
   --output-dir evaluation/qwen3-epoch10
 ```
 
@@ -179,6 +180,12 @@ The runner records one observation for every planned attempt, including
 failures, and writes audio under the plan's expected path. It does not run ASR,
 speaker similarity, or human listening and therefore does not make a quality
 claim.
+
+For an exact cross-runtime experiment, also pass `--artifact-set-id` and
+`--artifact-set-sha256` together. The runner rejects partial or malformed
+bindings. Generate and live-verify the corresponding runtime artifact manifest
+with evaluator revision `a85677df59c416675048967f64f4f97dd6b530cd` before
+using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
 |--------|----------|
