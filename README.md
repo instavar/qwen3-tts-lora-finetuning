@@ -184,7 +184,7 @@ claim.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `ebe3d9957ec2e2a44f687e22d4211545aa5b330c` before
+with evaluator revision `7a88f11114dca3d23ffe99892b55ac6c7b3c7490` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
