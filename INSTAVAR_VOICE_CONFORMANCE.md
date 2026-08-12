@@ -1,6 +1,6 @@
 # Instavar Voice conformance
 
-This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest and executable [`instavar-voice-backend.json`](instavar-voice-backend.json) recipe use the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to commit `cdf32a6f45afa11cb220da4463f80d00de0b9c27`.
+This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest and executable [`instavar-voice-backend.json`](instavar-voice-backend.json) recipe use the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to commit `5f5eb50f9603fc265935fb8ac7efa74630d8dc94`.
 
 The backend runs corpus audit, content-addressed dataset-lineage verification, the existing LoRA launcher, fresh-process reload, frozen-plan evaluation, and adapter packaging through one fail-closed lifecycle. It verifies lineage before and after preflight and training so an audited manifest cannot be silently substituted between those stages. CI validates the binding and exercises dependency-free wrapper behavior; it does not run GPU training.
 

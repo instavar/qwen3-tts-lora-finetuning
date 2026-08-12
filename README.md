@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `cdf32a6f45afa11cb220da4463f80d00de0b9c27` to create
+revision `5f5eb50f9603fc265935fb8ac7efa74630d8dc94` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `cdf32a6f45afa11cb220da4463f80d00de0b9c27` before
+with evaluator revision `5f5eb50f9603fc265935fb8ac7efa74630d8dc94` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -268,6 +268,9 @@ pronunciation or accent judgments. Version 0.23 preregisters criterion-specific
 blind-listening assignments so lexical pronunciation, cadence, fatigue, and
 emotion ratings only cover prompts that can support those claims while
 preserving candidate-symmetric coverage.
+Version 0.24 binds exact requested text, optional instructions, and lexical
+target surfaces into each blind stimulus while excluding accepted ASR aliases
+and candidate identity. Reviewers no longer need an uncontrolled prompt file.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
