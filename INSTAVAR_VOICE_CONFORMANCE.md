@@ -1,6 +1,8 @@
 # Instavar Voice conformance
 
-This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest uses the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `64631f223f8593a8951827670a4cfa6f0ca83588`.
+This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest uses the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `504b9a1c9938aa39016f7cb35cb192aa74dc40b0`.
+
+Capability schema 1.2 records each fine-tuning lifecycle stage separately and names the exact blocker for the matched base-model comparison. A repository-level `supported` label no longer implies corpus audit, evaluation, or packaging completeness.
 
 A capability marked `supported` means the referenced repository evidence reaches the stated engineering boundary. It does not prove perceptual quality, accent fidelity, commercial suitability, or equivalence across untested runtimes. `unverified_for_adapter` keeps an upstream or community runtime visible without implying that this repository's adapted artifact works there.
 
