@@ -611,6 +611,7 @@ index 0000000..c112ac4
 +        text=args.text,
 +        speaker=args.speaker_name,
 +        language=args.language,
++        max_new_tokens=args.max_new_tokens,
 +    )
 +    sf.write(args.output_wav, wavs[0], sr)
 +

@@ -18,3 +18,17 @@ The test used prompt `neutral-brief` from `instavar-singapore-english` version 1
 The ASR word error rate was 0.0 and the output was a valid mono PCM WAV with no clipped samples. This is one short prompt and one seed. It establishes bounded execution and intelligibility under the named extractor. It does not establish speaker identity, Singapore English accent fidelity, cadence, naturalness, listening fatigue, warm throughput, or long-session stability. Cold-start real-time factor includes model loading.
 
 The remote checkout predates explicit `PYTHON` support in the wrapper. A Conda activation under nounset failed and left only the GPU sampler alive. The successful retry put the isolated environment's `bin` directory first on `PATH`. The local companion change already accepts an explicit `PYTHON`, which removes this ambiguity.
+
+## Frozen multi-prompt follow-up
+
+The new single-load suite runner completed all 21 planned rows from prompt pack
+1.1.0: seven prompts across seeds 42, 314159, and 20260812. All 21 outputs were
+valid. They contain 372.720 seconds of audio and required 250.126 seconds of
+warm generation time after model loading. Peak allocated CUDA memory during a
+sample was 4,783.8 MiB.
+
+Evidence is under
+`/mnt/work/chee-wei-jie/voice-model-outputs/conformance/20260812_instavar_voice_suite_v1_1`.
+The runner source was copied from an uncommitted feature branch, so this is a
+smoke test of the exact recorded source hash, not a clean-checkout reproduction.
+No human ratings or base-model comparison have been completed.

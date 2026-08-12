@@ -10,6 +10,8 @@ TEXT="${TEXT:-On a quiet morning, the streets were nearly empty.}"
 SPEAKER_NAME="${SPEAKER_NAME:-speaker}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 LORA_SCALE="${LORA_SCALE:-0.3}"
+SEED="${SEED:-42}"
+MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-4096}"
 
 "${PYTHON}" "${QWEN_DIR}/finetuning/infer_lora_custom_voice.py" \
   --base_model_path "${BASE_MODEL}" \
@@ -18,5 +20,7 @@ LORA_SCALE="${LORA_SCALE:-0.3}"
   --text "${TEXT}" \
   --language auto \
   --lora_scale "${LORA_SCALE}" \
+  --seed "${SEED}" \
+  --max_new_tokens "${MAX_NEW_TOKENS}" \
   --attn_implementation "${ATTN_IMPL}" \
   --output_wav "${OUT_WAV}"
