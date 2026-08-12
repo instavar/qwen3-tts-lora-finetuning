@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `5a94e658e4dfdf34ef1bce9ab59e070828df48fd` to create
+revision `0219b18928b017aec8a8c3e6ef4cf06b66dd13b1` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `5a94e658e4dfdf34ef1bce9ab59e070828df48fd` before
+with evaluator revision `0219b18928b017aec8a8c3e6ef4cf06b66dd13b1` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -256,7 +256,9 @@ Apache-2.0
 
 The pinned evaluator provides schema 1.3 frozen speaker-reference assignments,
 the optional schema 1.4 SpeechBrain ECAPA execution path, and the optional
-schema 1.5 local faster-whisper ASR path. This companion bundles neither model
+schema 1.5 local faster-whisper ASR path. Version 0.20 also distinguishes
+generation-plan-bound ASR reference text from observation-declared strings.
+This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
 models, frozen decoding, and a preregistered reference plan where applicable.
