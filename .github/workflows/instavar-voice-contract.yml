@@ -32,6 +32,10 @@ jobs:
         run: python .instavar-voice-evaluation/main.py validate historical historical-run.json
       - name: Validate executable lifecycle backend
         run: python .instavar-voice-evaluation/main.py validate-backend instavar-voice-backend.json
+      - name: Validate full SFT lifecycle backend
+        run: python .instavar-voice-evaluation/main.py validate-backend instavar-voice-backend-full-sft.json
+      - name: Validate lifecycle backend registry
+        run: python .instavar-voice-evaluation/main.py validate-backend-registry instavar-voice-backend-registry.json
       - name: Test lifecycle wrapper without model dependencies
         env:
           PYTHONPATH: .instavar-voice-evaluation

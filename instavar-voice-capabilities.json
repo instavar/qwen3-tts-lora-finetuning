@@ -88,14 +88,87 @@
       }
     },
     "full_sft": {
-      "status": "upstream_only",
+      "status": "experimental",
       "evidence": [
         {
           "level": "repository_declared",
-          "ref": "README.md#alternatives",
-          "claim": "The README routes full SFT to the current official upstream implementation."
+          "ref": "README.md#full-sft-lifecycle",
+          "claim": "The companion declares a distinct single-process full-SFT trainer, full-model reload path, frozen-plan evaluation, and research packaging lifecycle."
         }
-      ]
+      ],
+      "lifecycle": {
+        "corpus_audit": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "instavar-voice-backend-full-sft.json",
+              "claim": "Preflight binds grouped train, validation, and test audit to dataset lineage."
+            }
+          ],
+          "boundary": "The wrapper tests are dependency-free and do not constitute a real corpus audit."
+        },
+        "training": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "scripts/train_full_sft.py",
+              "claim": "The trainer applies the known text-projection and label-alignment fixes to full-weight optimization."
+            }
+          ],
+          "boundary": "No real full-SFT GPU run has been recorded, and multi-process training fails closed."
+        },
+        "checkpoint_save": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "scripts/train_full_sft.py",
+              "claim": "The trainer writes a reloadable full-model checkpoint with processor files and explicit speaker metadata."
+            }
+          ],
+          "boundary": "Checkpoint creation has only dependency-free contract coverage."
+        },
+        "fresh_process_reload": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "scripts/run_full_sft_infer.py",
+              "claim": "The lifecycle extracts the selected full model and reloads it in a separate process."
+            }
+          ],
+          "boundary": "A real model reload has not been executed in this revision."
+        },
+        "held_out_inference": {
+          "status": "not_recorded",
+          "evidence": [],
+          "boundary": "No held-out full-SFT observation matrix exists."
+        },
+        "evaluation": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "scripts/run_evaluation_suite.py",
+              "claim": "The frozen-plan runner accepts either a LoRA adapter or a full-model checkpoint without loading both."
+            }
+          ],
+          "boundary": "No objective or human result exists for a full-SFT checkpoint."
+        },
+        "packaging": {
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "scripts/instavar_voice_full_sft_lifecycle.py",
+              "claim": "The lifecycle binds the full model, evaluation bundle, experiment, plan, and dataset lineage into a research package."
+            }
+          ],
+          "boundary": "The research package is not approval to distribute model weights, data, or generated audio."
+        }
+      }
     }
   },
   "runtimes": [
@@ -124,6 +197,32 @@
           "claim": "The pinned companion path loads a LoRA adapter with explicit scale control and generates audio."
         }
       ]
+    },
+    {
+      "id": "pytorch_full_sft",
+      "status": "experimental",
+      "artifact_mode": "checkpoint",
+      "streaming": false,
+      "profile": "reference",
+      "device": "cuda",
+      "interface": "cli",
+      "precision": "bfloat16",
+      "batching": false,
+      "conformance": {
+        "status": "not_run",
+        "clean_checkout": true,
+        "fresh_process": false,
+        "prompt_count": 0,
+        "seed_count": 0
+      },
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "instavar-voice-backend-full-sft.json",
+          "claim": "A full-model PyTorch lifecycle is declared separately from the validated LoRA runtime."
+        }
+      ],
+      "notes": "Single-process only until real multi-process checkpoint and reload evidence exists."
     },
     {
       "id": "openai_compatible_http",
@@ -192,6 +291,9 @@
   },
   "known_gaps": [
     "Revalidate the patch against current official Qwen3-TTS fine-tuning before claiming incremental necessity.",
+    "The full-SFT path has dependency-free contract coverage but no recorded GPU training, checkpoint reload, or held-out generation.",
+    "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
+    "Full SFT does not preserve optimizer state for exact interrupted-run resume.",
     "No alternative runtime has passed adapter-aware conformance.",
     "The 21-row frozen runtime suite has no human ratings or base-model comparison."
   ]

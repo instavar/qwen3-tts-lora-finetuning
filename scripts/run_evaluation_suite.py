@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
-from peft import PeftModel
 
 
 IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -25,8 +24,9 @@ IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qwen-dir", type=Path, required=True)
-    parser.add_argument("--base-model", required=True)
-    parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument("--base-model")
+    parser.add_argument("--adapter", type=Path)
+    parser.add_argument("--model")
     parser.add_argument("--generation-plan", type=Path, required=True)
     parser.add_argument("--candidate-id", required=True)
     parser.add_argument("--runtime-id", default="pytorch")
@@ -48,7 +48,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="return success after recording every planned attempt even when an output is invalid",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if bool(args.adapter) == bool(args.model):
+        parser.error("provide exactly one of --adapter or --model")
+    if args.adapter and not args.base_model:
+        parser.error("--base-model is required with --adapter")
+    if args.model and args.base_model:
+        parser.error("--base-model cannot be combined with --model")
+    return args
 
 
 def read_plan(path: Path, candidate_id: str) -> list[dict]:
@@ -117,21 +124,27 @@ def main() -> int:
     sys.path.insert(0, str(finetuning_dir))
     from qwen_tts import Qwen3TTSModel
 
-    helper = importlib.import_module("infer_lora_custom_voice")
-
     dtype_map = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
     tts = Qwen3TTSModel.from_pretrained(
-        args.base_model,
+        args.model or args.base_model,
         device_map=args.device,
         torch_dtype=dtype_map[args.dtype],
         attn_implementation=args.attention,
     )
-    peft_model = PeftModel.from_pretrained(tts.model, str(args.adapter))
-    helper._set_lora_scale(peft_model, args.lora_scale)
-    tts.model = peft_model if args.no_merge_lora else peft_model.merge_and_unload()
-    core_model = helper._resolve_core_model(tts.model)
-    helper._apply_speaker_config(core_model, str(args.adapter), args.speaker_name, args.speaker_id)
-    helper._apply_speaker_embedding(core_model, str(args.adapter), args.speaker_name, args.speaker_embedding)
+    artifact_kind = "full_sft"
+    if args.adapter:
+        from peft import PeftModel
+
+        helper = importlib.import_module("infer_lora_custom_voice")
+        peft_model = PeftModel.from_pretrained(tts.model, str(args.adapter))
+        helper._set_lora_scale(peft_model, args.lora_scale)
+        tts.model = peft_model if args.no_merge_lora else peft_model.merge_and_unload()
+        core_model = helper._resolve_core_model(tts.model)
+        helper._apply_speaker_config(core_model, str(args.adapter), args.speaker_name, args.speaker_id)
+        helper._apply_speaker_embedding(core_model, str(args.adapter), args.speaker_name, args.speaker_embedding)
+        artifact_kind = "adapter"
+    else:
+        core_model = tts.model
     core_model.eval()
 
     observations: list[dict] = []
@@ -152,7 +165,7 @@ def main() -> int:
             "seed": row["seed"],
             "requested_text": row["text"],
             "valid": False,
-            "runtime": "qwen3_tts_pytorch_cuda_adapter",
+            "runtime": f"qwen3_tts_pytorch_cuda_{artifact_kind}",
             **artifact_fields,
         }
         try:

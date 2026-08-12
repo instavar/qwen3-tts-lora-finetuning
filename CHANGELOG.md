@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Full SFT lifecycle
+
+- Added an experimental, single-process full-weight trainer that applies the
+  known text-projection and label-alignment fixes without PEFT.
+- Added a distinct full-model backend recipe, backend registry, fresh-process
+  inference, frozen-plan evaluation, and provenance-bound research packaging.
+- Added fail-closed capability boundaries for the untested GPU, multi-process,
+  checkpoint-reload, held-out generation, and distribution surfaces.
+- Extended the shared generation runner to accept exactly one LoRA adapter or
+  full-SFT checkpoint while loading the selected model once.
+
 ### Bug fixes
 
 - Regenerated the `sft_12hz.py` patch context against the README-pinned upstream

@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.2.0",
+  "backend_id": "qwen3-tts-full-sft-pytorch",
+  "capability_binding": {
+    "manifest": "instavar-voice-capabilities.json",
+    "adaptation": "full_sft",
+    "runtime_ids": [
+      "pytorch_full_sft"
+    ]
+  },
+  "required_environment": [
+    {
+      "name": "QWEN_DIR",
+      "purpose": "Clean pinned Qwen3-TTS checkout that supplies the model package and dataset implementation."
+    },
+    {
+      "name": "BASE_MODEL",
+      "purpose": "Pinned local base-model directory or immutable model identifier."
+    },
+    {
+      "name": "TRAIN_JSONL",
+      "purpose": "Training manifest with precomputed Qwen audio codes."
+    },
+    {
+      "name": "VAL_JSONL",
+      "purpose": "Held-out validation manifest from the same grouped corpus split."
+    },
+    {
+      "name": "TEST_JSONL",
+      "purpose": "Held-out test manifest from the same grouped corpus split."
+    },
+    {
+      "name": "DATASET_LINEAGE",
+      "purpose": "Content-addressed receipt binding audited splits to the manifests consumed by training."
+    },
+    {
+      "name": "SELECTED_CHECKPOINT_NAME",
+      "purpose": "Single safe full-model checkpoint directory created by training and selected for reload."
+    },
+    {
+      "name": "GENERATION_PLAN",
+      "purpose": "Frozen Instavar Voice generation plan containing this candidate."
+    },
+    {
+      "name": "CANDIDATE_ID",
+      "purpose": "Candidate identifier present in the frozen generation plan."
+    }
+  ],
+  "environment": {
+    "DEVICE": "cuda:0",
+    "DTYPE": "bf16",
+    "MIXED_PRECISION": "bf16",
+    "ATTN_IMPL": "flash_attention_2"
+  },
+  "commands": {
+    "preflight": [
+      "{python}",
+      "scripts/instavar_voice_full_sft_lifecycle.py",
+      "preflight"
+    ],
+    "train": [
+      "{python}",
+      "scripts/instavar_voice_full_sft_lifecycle.py",
+      "train"
+    ],
+    "infer": [
+      "{python}",
+      "scripts/instavar_voice_full_sft_lifecycle.py",
+      "infer"
+    ],
+    "evaluate": [
+      "{python}",
+      "scripts/instavar_voice_full_sft_lifecycle.py",
+      "evaluate"
+    ],
+    "package": [
+      "{python}",
+      "scripts/instavar_voice_full_sft_lifecycle.py",
+      "package"
+    ]
+  },
+  "expected_artifacts": {
+    "preflight": [
+      "preflight/preflight.json"
+    ],
+    "train": [
+      "train/selected-full-model.tar"
+    ],
+    "infer": [
+      "infer/candidate.wav"
+    ],
+    "evaluate": [
+      "evaluate/evaluation-bundle.tar"
+    ],
+    "package": [
+      "package/full-sft-package.tar"
+    ]
+  },
+  "timeout_seconds": {
+    "preflight": 300,
+    "train": 172800,
+    "infer": 1800,
+    "evaluate": 21600,
+    "package": 7200
+  }
+}

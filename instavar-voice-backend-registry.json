@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "backends": [
+    {
+      "backend_id": "qwen3-tts-lora-pytorch",
+      "spec": "instavar-voice-backend.json"
+    },
+    {
+      "backend_id": "qwen3-tts-full-sft-pytorch",
+      "spec": "instavar-voice-backend-full-sft.json"
+    }
+  ]
+}

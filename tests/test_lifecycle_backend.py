@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from instavar_voice_lab.lineage import build_dataset_lineage
+from instavar_voice_lab.lifecycle import resolve_backend_spec
 
 
 ROOT = Path(__file__).parents[1]
@@ -18,6 +19,22 @@ SPEC = importlib.util.spec_from_file_location("qwen_lifecycle", ROOT / "scripts"
 assert SPEC and SPEC.loader
 LIFECYCLE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(LIFECYCLE)
+
+FULL_SPEC = importlib.util.spec_from_file_location(
+    "qwen_full_sft_lifecycle",
+    ROOT / "scripts" / "instavar_voice_full_sft_lifecycle.py",
+)
+assert FULL_SPEC and FULL_SPEC.loader
+FULL_LIFECYCLE = importlib.util.module_from_spec(FULL_SPEC)
+FULL_SPEC.loader.exec_module(FULL_LIFECYCLE)
+
+TRAIN_SPEC = importlib.util.spec_from_file_location(
+    "qwen_full_sft_trainer",
+    ROOT / "scripts" / "train_full_sft.py",
+)
+assert TRAIN_SPEC and TRAIN_SPEC.loader
+FULL_TRAINER = importlib.util.module_from_spec(TRAIN_SPEC)
+TRAIN_SPEC.loader.exec_module(FULL_TRAINER)
 
 
 class LifecycleBackendTests(unittest.TestCase):
@@ -27,6 +44,45 @@ class LifecycleBackendTests(unittest.TestCase):
         self.assertEqual(spec["capability_binding"]["adaptation"], "lora")
         for stage in ("preflight", "train", "infer", "evaluate", "package"):
             self.assertEqual(spec["commands"][stage][-1], stage)
+
+    def test_backend_registry_separates_lora_and_full_sft(self) -> None:
+        registry = json.loads((ROOT / "instavar-voice-backend-registry.json").read_text())
+        self.assertEqual(registry["schema_version"], "1.0.0")
+        self.assertEqual(
+            {entry["backend_id"] for entry in registry["backends"]},
+            {"qwen3-tts-lora-pytorch", "qwen3-tts-full-sft-pytorch"},
+        )
+        spec = json.loads((ROOT / "instavar-voice-backend-full-sft.json").read_text())
+        self.assertEqual(spec["capability_binding"]["adaptation"], "full_sft")
+        self.assertEqual(spec["capability_binding"]["runtime_ids"], ["pytorch_full_sft"])
+        self.assertEqual(
+            spec["environment"],
+            {
+                "DEVICE": "cuda:0",
+                "DTYPE": "bf16",
+                "MIXED_PRECISION": "bf16",
+                "ATTN_IMPL": "flash_attention_2",
+            },
+        )
+        for stage in ("preflight", "train", "infer", "evaluate", "package"):
+            self.assertEqual(spec["commands"][stage][-1], stage)
+
+    def test_registry_selects_full_sft_from_experiment_mode(self) -> None:
+        import instavar_voice_lab
+
+        evaluator_root = Path(instavar_voice_lab.__file__).parents[1]
+        experiment = json.loads(
+            (evaluator_root / "examples" / "experiment-manifest.json").read_text()
+        )
+        experiment["adaptation_mode"] = "full_sft"
+        with tempfile.TemporaryDirectory() as temporary:
+            experiment_path = Path(temporary) / "experiment.json"
+            experiment_path.write_text(json.dumps(experiment))
+            selected = resolve_backend_spec(
+                ROOT / "instavar-voice-backend-registry.json",
+                experiment_path,
+            )
+        self.assertEqual(selected.name, "instavar-voice-backend-full-sft.json")
 
     def test_selected_adapter_must_be_one_safe_child(self) -> None:
         self.assertEqual(LIFECYCLE._safe_child_name("checkpoint-epoch-3"), "checkpoint-epoch-3")
@@ -43,6 +99,79 @@ class LifecycleBackendTests(unittest.TestCase):
             (root / "adapter_model.bin").symlink_to(target)
             with self.assertRaisesRegex(ValueError, "symlinks"):
                 LIFECYCLE._archive_directory(root, Path(temporary) / "adapter.tar", arcname="adapter")
+
+    def test_archive_round_trip_supports_full_model_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "source"
+            model.mkdir()
+            (model / "config.json").write_text("{}\n")
+            (model / "model.safetensors").write_bytes(b"weights")
+            archive = root / "model.tar"
+            LIFECYCLE._archive_directory(model, archive, arcname="model")
+            extracted = LIFECYCLE._extract_archive(archive, root / "reload", arcname="model")
+            self.assertEqual((extracted / "model.safetensors").read_bytes(), b"weights")
+
+    def test_archive_rejects_members_outside_declared_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "outside.txt"
+            source.write_text("outside\n")
+            archive = root / "mixed.tar"
+            with tarfile.open(archive, "w") as handle:
+                handle.add(source, arcname="unexpected/outside.txt")
+            with self.assertRaisesRegex(ValueError, "rooted at 'model'"):
+                LIFECYCLE._extract_archive(archive, root / "reload", arcname="model")
+
+    def test_full_sft_numeric_guards_reject_ood_values(self) -> None:
+        for value in (float("nan"), float("inf"), 0.0, -1.0):
+            with self.assertRaisesRegex(ValueError, "finite and greater than 0"):
+                FULL_TRAINER._positive_finite(value, "learning rate")
+        for value in (-1, -100):
+            with self.assertRaisesRegex(ValueError, "at least 0"):
+                FULL_TRAINER._nonnegative(value, "speaker reference index")
+
+    def test_full_sft_manifest_loader_rejects_empty_and_non_object_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "train.jsonl"
+            manifest.write_text("\n")
+            with self.assertRaisesRegex(ValueError, "contains no rows"):
+                FULL_TRAINER._load_rows(manifest)
+            manifest.write_text("[]\n")
+            with self.assertRaisesRegex(ValueError, "must contain a JSON object"):
+                FULL_TRAINER._load_rows(manifest)
+            manifest.write_text('{"audio": "one.wav", "text": "one"}\n')
+            self.assertEqual(FULL_TRAINER._load_rows(manifest)[0]["text"], "one")
+
+    def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            experiment = Path(temporary) / "experiment.json"
+            experiment.write_text(
+                json.dumps(
+                    {
+                        "adaptation_mode": "full_sft",
+                        "backend": {
+                            "instavar_revision": "a" * 40,
+                            "upstream_revision": "b" * 40,
+                        },
+                    }
+                )
+            )
+            with (
+                patch.object(FULL_LIFECYCLE, "_required_path", return_value=experiment),
+                patch.object(
+                    FULL_LIFECYCLE,
+                    "_capture",
+                    side_effect=["a" * 40, "b" * 40],
+                ),
+                patch.object(
+                    FULL_LIFECYCLE,
+                    "_git_status_paths",
+                    side_effect=[set(), {"finetuning/sft_12hz.py"}],
+                ),
+                self.assertRaisesRegex(ValueError, "requires a clean Qwen checkout"),
+            ):
+                FULL_LIFECYCLE._verify_source_revisions(Path(temporary))
 
     def test_patched_upstream_must_equal_head_plus_exact_patch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -196,6 +325,39 @@ class LifecycleBackendTests(unittest.TestCase):
             self.assertIn("package/dataset-lineage.json", names)
             self.assertIn("package/generation-plan.json", names)
             self.assertIn("package/package-manifest.json", names)
+
+    def test_full_sft_package_binds_checkpoint_and_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            work_dir = root / "work"
+            (work_dir / "train").mkdir(parents=True)
+            (work_dir / "evaluate").mkdir(parents=True)
+            (work_dir / "train" / "selected-full-model.tar").write_bytes(b"checkpoint")
+            (work_dir / "evaluate" / "evaluation-bundle.tar").write_bytes(b"evaluation")
+            controls = {}
+            for name in ("experiment", "plan", "lineage"):
+                path = root / f"{name}.json"
+                path.write_text("{}\n")
+                controls[name] = path
+            result = work_dir / "package" / "stage-result.json"
+            environment = {
+                "CANDIDATE_ID": "full-sft-candidate",
+                "GENERATION_PLAN": str(controls["plan"]),
+                "DATASET_LINEAGE": str(controls["lineage"]),
+                "INSTAVAR_VOICE_EXPERIMENT_MANIFEST": str(controls["experiment"]),
+                "INSTAVAR_VOICE_WORK_DIR": str(work_dir),
+                "INSTAVAR_VOICE_STAGE_RESULT": str(result),
+            }
+            with patch.dict(os.environ, environment, clear=False):
+                FULL_LIFECYCLE.run("package")
+            package = work_dir / "package" / "full-sft-package.tar"
+            with tarfile.open(package, "r") as archive:
+                names = set(archive.getnames())
+                manifest = json.load(archive.extractfile("package/package-manifest.json"))
+            self.assertIn("package/selected-full-model.tar", names)
+            self.assertIn("package/evaluation-bundle.tar", names)
+            self.assertEqual(manifest["backend_id"], "qwen3-tts-full-sft-pytorch")
+            self.assertEqual(json.loads(result.read_text())["stage"], "package")
 
 
 if __name__ == "__main__":

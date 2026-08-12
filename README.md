@@ -1,6 +1,6 @@
 # Qwen3-TTS LoRA Fine-Tuning (Companion Repo)
 
-**LoRA fine-tuning tools for [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)** — custom voice adaptation without forking upstream.
+**LoRA fine-tuning tools for [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)** with an experimental, separately declared full-SFT lifecycle for custom voice adaptation.
 
 We used this repo to fine-tune Qwen3-TTS 1.7B on IMDA NSC FEMALE\_01 (Singaporean English) for production voice cloning. The pitfalls, fixes, and recommendations below come from that experience.
 
@@ -134,7 +134,7 @@ bash scripts/run_bench.sh
 
 ## Utility scripts
 
-### Executable Instavar Voice lifecycle
+### Executable Instavar Voice lifecycles
 
 [`instavar-voice-backend.json`](instavar-voice-backend.json) binds this
 repository's LoRA and PyTorch declarations to a real five-stage backend. The
@@ -148,6 +148,10 @@ Validate the recipe with the pinned evaluator before a GPU run:
 ```bash
 python /path/to/instavar-voice-evaluation/main.py \
   validate-backend instavar-voice-backend.json
+python /path/to/instavar-voice-evaluation/main.py \
+  validate-backend instavar-voice-backend-full-sft.json
+python /path/to/instavar-voice-evaluation/main.py \
+  validate-backend-registry instavar-voice-backend-registry.json
 ```
 
 The required environment names and purposes live in the backend file. Use a
@@ -159,6 +163,61 @@ Qwen file against a temporary Git index containing pinned upstream plus
 `patches/0001-qwen3-tts-lora.patch`, and rejects unrelated dirty paths. A passed
 lifecycle proves that the declared commands and artifacts completed without
 mutation. It does not prove perceptual improvement.
+
+### Full SFT lifecycle
+
+[`instavar-voice-backend-full-sft.json`](instavar-voice-backend-full-sft.json)
+declares a second five-stage backend. It uses
+[`scripts/train_full_sft.py`](scripts/train_full_sft.py), not the official
+`sft_12hz.py`, because the official trainer at upstream revision
+`022e286b98fbec7e1e916cb940cdf532cd9f488e` still lacks the complete
+text-projection and label-alignment corrections documented in this repo.
+
+The full-SFT trainer:
+
+- optimizes all model parameters without PEFT;
+- computes codec-0 loss with one explicit target shift;
+- applies `text_projection` when the model exposes it;
+- derives the saved custom-speaker row from the explicit deterministic
+  `SPEAKER_REFERENCE_INDEX` training record, defaulting to row zero;
+- seeds the single-process training path through `TRAIN_SEED`, defaulting to
+  42, and records both seed and reference-row index in checkpoint metadata;
+- aborts on non-finite loss and rejects reuse of a speaker ID already assigned
+  to another name;
+- writes the canonical speaker row into a copied checkpoint state dict, leaving
+  the live model unchanged when training continues to another epoch;
+- saves the model and processor together for fresh-process reload;
+- rejects multi-process execution until distributed save and reload behavior
+  has reproduced evidence.
+
+The lifecycle requires a clean pinned Qwen checkout. Do not apply the LoRA
+patch to that checkout. `SELECTED_CHECKPOINT_NAME` selects one child produced
+under the full-SFT output, such as `checkpoint-epoch-2`. The registry chooses
+the LoRA or full-SFT recipe from the experiment manifest's `adaptation_mode`.
+The recipe fixes its declared runtime to CUDA, bfloat16, and FlashAttention 2
+so observed evidence cannot silently drift away from the capability manifest.
+
+Run it through the pinned evaluator rather than invoking stages by hand:
+
+```bash
+python /path/to/instavar-voice-evaluation/main.py \
+  run-registered-lifecycle \
+  instavar-voice-backend-registry.json \
+  /path/to/full-sft-experiment.json \
+  --work-dir /path/to/new-empty-work-dir
+```
+
+This path is `experimental`, not validated. CI checks schemas and
+dependency-free wrapper behavior only. A real GPU run must still demonstrate
+training, full checkpoint save, fresh reload, all frozen generation rows, and
+matched human evaluation. Plan substantial free disk space: stage isolation
+keeps the selected checkpoint archive, fresh reloads, evaluation evidence, and
+the final research package as separate provenance surfaces.
+The recorded RNG seed improves reproducibility but does not promise
+bit-identical CUDA kernels or outputs across hardware and dependency versions.
+The experimental trainer does not yet preserve optimizer state for interrupted
+run resume. Restarting from a saved model checkpoint is not equivalent to an
+exact optimizer-state continuation and must be recorded as a new experiment.
 
 ### Frozen multi-prompt evaluation
 
@@ -175,6 +234,11 @@ python scripts/run_evaluation_suite.py \
   --runtime-id pytorch \
   --output-dir evaluation/qwen3-epoch10
 ```
+
+For a full-SFT checkpoint, replace `--base-model` and `--adapter` with
+`--model /path/to/checkpoint-epoch-2` and use runtime ID
+`pytorch_full_sft`. The runner rejects ambiguous invocations that provide both
+artifact forms.
 
 The runner records one observation for every planned attempt, including
 failures, and writes audio under the plan's expected path. It does not run ASR,
@@ -198,6 +262,9 @@ using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 |--------|----------|
 | `scripts/run_lora_train.sh` | Training launcher with validated config |
 | `scripts/run_lora_infer.sh` | Single-sentence inference |
+| `scripts/run_full_sft_train.sh` | Single-process full-SFT launcher with known trainer fixes |
+| `scripts/run_full_sft_infer.py` | Fresh-process full-model inference |
+| `scripts/train_full_sft.py` | Companion-owned full-weight trainer and checkpoint writer |
 | `scripts/run_eval_loss.sh` | Eval loss on test set |
 | `scripts/run_bench.sh` | Step timing benchmark |
 | `scripts/run_infer_epochs.sh` | One sample per checkpoint for listening comparison |
@@ -238,12 +305,18 @@ This repo provides the **LoRA fine-tuning path** with production-validated pitfa
 | Approach | Repo | Best for |
 |----------|------|----------|
 | **LoRA fine-tuning** (this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Fast iteration, adapter-based voice adaptation, production deployment with scale control |
-| **Full SFT** (official) | [QwenLM/Qwen3-TTS/finetuning](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) | Maximum quality when you can afford full-weight updates. Note: upstream `sft_12hz.py` has known bugs (see pitfalls #1-#2 above) |
+| **Full SFT** (experimental lifecycle in this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Full-weight adaptation with the known trainer fixes, strict provenance, fresh reload, and frozen evaluation. No real GPU run is recorded yet |
+| **Full SFT** (official trainer) | [QwenLM/Qwen3-TTS/finetuning](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) | Upstream reference implementation. Recheck pitfalls #1 and #2 against the exact revision before use |
 | **Full SFT + WebUI** | [mozi1924/Qwen3-TTS-EasyFinetuning](https://github.com/mozi1924/Qwen3-TTS-EasyFinetuning) | Automated preprocessing + Gradio interface. Good for users who want a GUI workflow. Does not include LoRA support or the upstream bug fixes |
 | **ComfyUI integration** | [DarioFT/ComfyUI-Qwen3-TTS](https://github.com/DarioFT/ComfyUI-Qwen3-TTS) | Fine-tuning and inference within ComfyUI node workflows |
 | **Audiobook pipeline + LoRA** | [Finrandojin/alexandria-audiobook](https://github.com/Finrandojin/alexandria-audiobook) | LoRA training embedded in a Gradio audiobook workflow with per-line style control |
 
-If you need full SFT with a friendlier interface and don't need LoRA, `mozi1924/Qwen3-TTS-EasyFinetuning` is worth evaluating. If you need LoRA with documented pitfalls and inference-time scale control, that's what this repo provides.
+If you need full SFT with a friendlier interface and do not need strict
+lifecycle provenance, `mozi1924/Qwen3-TTS-EasyFinetuning` is worth evaluating.
+Use this repo's full-SFT lifecycle when you need fail-closed source binding,
+dataset lineage, fresh reload, and the common frozen evaluation contract. Use
+the LoRA path when adapter size, scale control, and the existing validated run
+matter more than full-weight capacity.
 
 
 ## License

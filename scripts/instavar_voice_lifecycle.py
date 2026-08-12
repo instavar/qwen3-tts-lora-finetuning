@@ -55,26 +55,26 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _safe_child_name(value: str) -> str:
+def _safe_child_name(value: str, *, environment_name: str = "SELECTED_ADAPTER_NAME") -> str:
     path = Path(value)
     if not value or value in {".", ".."} or path.is_absolute() or len(path.parts) != 1:
-        raise ValueError("SELECTED_ADAPTER_NAME must be one safe child directory name")
+        raise ValueError(f"{environment_name} must be one safe child directory name")
     return value
 
 
 def _check_archive_source(root: Path) -> None:
     if root.is_symlink() or not root.is_dir():
-        raise ValueError(f"adapter source must be a non-symlink directory: {root}")
+        raise ValueError(f"archive source must be a non-symlink directory: {root}")
     files = 0
     for path in root.rglob("*"):
         if path.is_symlink():
-            raise ValueError(f"adapter source must not contain symlinks: {path}")
+            raise ValueError(f"archive source must not contain symlinks: {path}")
         if path.is_file():
             files += 1
         elif not path.is_dir():
-            raise ValueError(f"adapter source contains an unsupported entry: {path}")
+            raise ValueError(f"archive source contains an unsupported entry: {path}")
     if files == 0:
-        raise ValueError(f"adapter source contains no files: {root}")
+        raise ValueError(f"archive source contains no files: {root}")
 
 
 def _archive_directory(source: Path, destination: Path, *, arcname: str) -> None:
@@ -84,20 +84,25 @@ def _archive_directory(source: Path, destination: Path, *, arcname: str) -> None
         archive.add(source, arcname=arcname, recursive=True)
 
 
-def _extract_archive(source: Path, destination: Path) -> Path:
+def _extract_archive(source: Path, destination: Path, *, arcname: str = "adapter") -> Path:
     destination.mkdir(parents=True, exist_ok=False)
     with tarfile.open(source, "r") as archive:
         members = archive.getmembers()
         if not members:
-            raise ValueError("adapter archive is empty")
+            raise ValueError("archive is empty")
         for member in members:
+            member_path = Path(member.name)
+            if not member_path.parts or member_path.parts[0] != arcname:
+                raise ValueError(
+                    f"archive member must be rooted at {arcname!r}: {member.name}"
+                )
             target = (destination / member.name).resolve()
             if not target.is_relative_to(destination.resolve()) or member.issym() or member.islnk():
-                raise ValueError(f"unsafe adapter archive member: {member.name}")
+                raise ValueError(f"unsafe archive member: {member.name}")
         archive.extractall(destination, members=members, filter="data")
-    adapter = destination / "adapter"
-    _check_archive_source(adapter)
-    return adapter
+    extracted = destination / arcname
+    _check_archive_source(extracted)
+    return extracted
 
 
 def _run(command: list[str], *, environment: dict[str, str] | None = None) -> None:
