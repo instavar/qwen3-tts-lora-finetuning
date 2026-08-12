@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` to create
+revision `283af52ad28debbdd539837873c9d73ced7c8418` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` before
+with evaluator revision `283af52ad28debbdd539837873c9d73ced7c8418` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -253,3 +253,10 @@ Apache-2.0
 ## Instavar Voice conformance
 
 [`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) declares the adaptation, runtime, evaluation, and rights boundaries supported by this companion. CI validates it against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). See [`INSTAVAR_VOICE_CONFORMANCE.md`](INSTAVAR_VOICE_CONFORMANCE.md) for the evidence interpretation rules and local validation command.
+
+The pinned evaluator also provides schema 1.2 content-addressed speaker
+reference sets, fixed per-reference aggregation, and embedding-value binding.
+This companion does not bundle a speaker encoder, so that extraction remains an
+explicit external stage. A plan-required speaker metric must use the stronger
+reference-set contract; runtime-bound observations alone are not speaker-quality
+evidence.
