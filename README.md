@@ -183,7 +183,7 @@ claim.
 
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
-revision `1a413952ae3f43aeda88fde5109e724771c12b0c` to create
+revision `2088146501081138b87e8e398eda610a392c0d4d` to create
 `generation-attempt-receipt.json` and the runtime-bound
 `objective-observations.json`. Timing and memory from the raw generation file
 must not be used for a version 1.1 comparison before that binding step.
@@ -191,7 +191,7 @@ must not be used for a version 1.1 comparison before that binding step.
 For an exact cross-runtime experiment, also pass `--artifact-set-id` and
 `--artifact-set-sha256` together. The runner rejects partial or malformed
 bindings. Generate and live-verify the corresponding runtime artifact manifest
-with evaluator revision `1a413952ae3f43aeda88fde5109e724771c12b0c` before
+with evaluator revision `2088146501081138b87e8e398eda610a392c0d4d` before
 using `compare-runtimes`. Converted artifacts remain `derived`, not exact.
 
 | Script | Purpose |
@@ -274,6 +274,10 @@ and candidate identity. Reviewers no longer need an uncontrolled prompt file.
 Version 0.25 binds each listening criterion to a reviewer question, low and
 high scale anchors, and an explicit score direction. Harm criteria remain raw
 and separate instead of being silently inverted or folded into a composite.
+Version 0.26 adds deterministic per-rater presentation schedules that
+counterbalance candidate precedence within each prompt and seed. Aggregation
+recomputes the private audit, requires the scheduled pseudonymous rater set,
+and keeps order, fatigue, carryover, and reviewer-compliance limits explicit.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
