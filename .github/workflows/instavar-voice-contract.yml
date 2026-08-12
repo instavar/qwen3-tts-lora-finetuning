@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: instavar/instavar-voice-evaluation
-          ref: 56b32c954e950fe915d4c6595c0630985576a9b7
+          ref: d63ab559a8e0592bd373f9b51421040b540fb2b7
           path: .instavar-voice-evaluation
       - uses: actions/setup-python@v6
         with:
@@ -26,3 +26,9 @@ jobs:
         run: python .instavar-voice-evaluation/main.py validate-repository "$GITHUB_WORKSPACE"
       - name: Validate historical run evidence
         run: python .instavar-voice-evaluation/main.py validate historical historical-run.json
+      - name: Validate executable lifecycle backend
+        run: python .instavar-voice-evaluation/main.py validate-backend instavar-voice-backend.json
+      - name: Test lifecycle wrapper without model dependencies
+        env:
+          PYTHONPATH: .instavar-voice-evaluation
+        run: python -m unittest tests/test_lifecycle_backend.py -v

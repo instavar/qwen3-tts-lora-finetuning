@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.2.0",
+  "backend_id": "qwen3-tts-lora-pytorch",
+  "capability_binding": {
+    "manifest": "instavar-voice-capabilities.json",
+    "adaptation": "lora",
+    "runtime_ids": ["pytorch"]
+  },
+  "required_environment": [
+    { "name": "QWEN_DIR", "purpose": "Pinned Qwen3-TTS checkout with the companion patches applied." },
+    { "name": "BASE_MODEL", "purpose": "Pinned local base-model directory or immutable model identifier." },
+    { "name": "TRAIN_JSONL", "purpose": "Training manifest with precomputed Qwen audio codes." },
+    { "name": "VAL_JSONL", "purpose": "Held-out validation manifest from the same grouped corpus split." },
+    { "name": "TEST_JSONL", "purpose": "Held-out test manifest from the same grouped corpus split." },
+    { "name": "SELECTED_ADAPTER_NAME", "purpose": "Single safe child directory created by training and selected for reload." },
+    { "name": "GENERATION_PLAN", "purpose": "Frozen Instavar Voice generation plan containing this candidate." },
+    { "name": "CANDIDATE_ID", "purpose": "Candidate identifier present in the frozen generation plan." }
+  ],
+  "commands": {
+    "preflight": ["{python}", "scripts/instavar_voice_lifecycle.py", "preflight"],
+    "train": ["{python}", "scripts/instavar_voice_lifecycle.py", "train"],
+    "infer": ["{python}", "scripts/instavar_voice_lifecycle.py", "infer"],
+    "evaluate": ["{python}", "scripts/instavar_voice_lifecycle.py", "evaluate"],
+    "package": ["{python}", "scripts/instavar_voice_lifecycle.py", "package"]
+  },
+  "expected_artifacts": {
+    "preflight": ["preflight/preflight.json"],
+    "train": ["train/selected-adapter.tar"],
+    "infer": ["infer/candidate.wav"],
+    "evaluate": ["evaluate/evaluation-bundle.tar"],
+    "package": ["package/adapter-package.tar"]
+  },
+  "timeout_seconds": {
+    "preflight": 300,
+    "train": 86400,
+    "infer": 1800,
+    "evaluate": 21600,
+    "package": 1800
+  }
+}
