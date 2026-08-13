@@ -545,7 +545,8 @@ class LifecycleBackendTests(unittest.TestCase):
             model, Path("checkpoint"), {"weight": "fixture"}
         )
         self.assertEqual(model.saved[1]["dtype"], "bfloat16")
-        self.assertNotIn("to_diff_dict", model.config.__dict__)
+        with self.assertRaisesRegex(KeyError, "dtype"):
+            model.config.to_diff_dict()
         with self.assertRaisesRegex(KeyError, "unexpected"):
             FULL_TRAINER._save_pretrained_with_full_config(
                 Model("unexpected"), Path("checkpoint"), {}

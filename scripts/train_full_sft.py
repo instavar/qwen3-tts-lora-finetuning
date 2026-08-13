@@ -210,7 +210,9 @@ def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict)
     except KeyError as error:
         if error.args != ("dtype",):
             raise
-        config.to_diff_dict = lambda: config.to_dict()
+        config_type = type(config)
+        original_to_diff_dict = config_type.to_diff_dict
+        config_type.to_diff_dict = lambda self: self.to_dict()
         try:
             model.save_pretrained(
                 output_dir,
@@ -218,7 +220,7 @@ def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict)
                 safe_serialization=True,
             )
         finally:
-            del config.to_diff_dict
+            config_type.to_diff_dict = original_to_diff_dict
         return
     model.save_pretrained(
         output_dir,
