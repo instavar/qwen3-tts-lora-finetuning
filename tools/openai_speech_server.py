@@ -327,6 +327,8 @@ def hash_directory_tree(
     )
     for member in sorted(candidates, key=lambda value: value.relative_to(root).as_posix()):
         relative = member.relative_to(root).as_posix()
+        if member.is_symlink():
+            raise ValueError(f"artifact tree contains a symbolic link: {relative}")
         resolved = member.resolve(strict=True)
         if member.is_dir():
             continue
@@ -337,6 +339,62 @@ def hash_directory_tree(
         total_bytes += size
     if not members:
         raise ValueError("artifact directory contains no files")
+    payload = json.dumps(members, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "file_count": len(members),
+        "size_bytes": total_bytes,
+        "tree_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def hash_qwen_runtime_source(qwen_dir: Path, *, mode: str) -> dict[str, Any]:
+    """Hash only source files imported by the fixed Qwen runtime."""
+
+    root = _resolve_directory(qwen_dir, "Qwen directory")
+    if mode not in {"adapter", "full-sft"}:
+        raise ValueError("mode must be adapter or full-sft")
+    required = [root / "qwen_tts"]
+    if mode == "adapter":
+        required.append(root / "finetuning" / "infer_lora_custom_voice.py")
+    members: list[dict[str, Any]] = []
+    total_bytes = 0
+    for entry in required:
+        if entry.is_symlink():
+            raise ValueError(
+                f"Qwen runtime source contains a symbolic link: {entry.relative_to(root).as_posix()}"
+            )
+        if entry.is_dir():
+            candidates = sorted(
+                (
+                    candidate
+                    for candidate in entry.rglob("*")
+                    if not any(
+                        part in {".DS_Store", "__pycache__"}
+                        for part in candidate.relative_to(root).parts
+                    )
+                    and candidate.suffix != ".pyc"
+                ),
+                key=lambda value: value.relative_to(root).as_posix(),
+            )
+        elif entry.is_file():
+            candidates = [entry]
+        else:
+            raise ValueError(
+                f"Qwen runtime source is missing: {entry.relative_to(root).as_posix()}"
+            )
+        for member in candidates:
+            relative = member.relative_to(root).as_posix()
+            if member.is_symlink():
+                raise ValueError(f"Qwen runtime source contains a symbolic link: {relative}")
+            if member.is_dir():
+                continue
+            if not member.is_file():
+                raise ValueError(f"Qwen runtime source contains an unsupported entry: {relative}")
+            size = member.stat().st_size
+            members.append({"path": relative, "sha256": sha256_file(member), "size_bytes": size})
+            total_bytes += size
+    if not members:
+        raise ValueError("Qwen runtime source contains no files")
     payload = json.dumps(members, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return {
         "file_count": len(members),
@@ -389,19 +447,7 @@ def build_startup_receipt(
         "seed": seed,
         "max_new_tokens": max_new_tokens,
         "artifacts": {
-            "qwen_source": hash_directory_tree(
-                qwen_dir,
-                excluded_directory_names=frozenset(
-                    {
-                        ".DS_Store",
-                        ".git",
-                        ".mypy_cache",
-                        ".pytest_cache",
-                        ".ruff_cache",
-                        "__pycache__",
-                    }
-                ),
-            ),
+            "qwen_source": hash_qwen_runtime_source(qwen_dir, mode=mode),
             "primary_model": hash_directory_tree(
                 primary_model,
                 excluded_directory_names=frozenset({"resume-state"}),

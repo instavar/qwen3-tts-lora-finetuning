@@ -241,6 +241,46 @@ class StartupValidationTests(unittest.TestCase):
             )
             self.assertEqual(first, second)
 
+    def test_tree_hash_rejects_symbolic_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifact = root / "artifact"
+            artifact.mkdir()
+            outside = root / "outside.bin"
+            outside.write_bytes(b"outside")
+            (artifact / "linked.bin").symlink_to(outside)
+            with self.assertRaisesRegex(ValueError, "symbolic link"):
+                server.hash_directory_tree(artifact)
+
+    def test_qwen_runtime_hash_excludes_training_outputs_and_requires_adapter_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            qwen = Path(temporary) / "qwen"
+            (qwen / "qwen_tts").mkdir(parents=True)
+            (qwen / "qwen_tts" / "__init__.py").write_text("value = 1\n")
+            (qwen / "finetuning").mkdir()
+            helper = qwen / "finetuning" / "infer_lora_custom_voice.py"
+            helper.write_text("helper = 1\n")
+            output = qwen / "finetuning" / "output" / "checkpoint-epoch-10"
+            output.mkdir(parents=True)
+            weights = output / "adapter_model.safetensors"
+            weights.write_bytes(b"first")
+            cache = qwen / "qwen_tts" / "__pycache__"
+            cache.mkdir()
+            compiled = cache / "module.pyc"
+            compiled.write_bytes(b"first")
+
+            full_sft = server.hash_qwen_runtime_source(qwen, mode="full-sft")
+            adapter = server.hash_qwen_runtime_source(qwen, mode="adapter")
+            self.assertEqual(full_sft["file_count"], 1)
+            self.assertEqual(adapter["file_count"], 2)
+            weights.write_bytes(b"second")
+            compiled.write_bytes(b"second")
+            self.assertEqual(full_sft, server.hash_qwen_runtime_source(qwen, mode="full-sft"))
+            self.assertEqual(adapter, server.hash_qwen_runtime_source(qwen, mode="adapter"))
+            helper.unlink()
+            with self.assertRaisesRegex(ValueError, "runtime source is missing"):
+                server.hash_qwen_runtime_source(qwen, mode="adapter")
+
     def test_startup_receipt_binds_mode_trees_and_controls_without_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -250,6 +290,10 @@ class StartupValidationTests(unittest.TestCase):
             for directory, name in ((qwen, "source.py"), (model, "config.json"), (adapter, "adapter.bin")):
                 directory.mkdir()
                 (directory / name).write_bytes(name.encode())
+            (qwen / "qwen_tts").mkdir()
+            (qwen / "qwen_tts" / "__init__.py").write_text("value = 1\n")
+            (qwen / "finetuning").mkdir()
+            (qwen / "finetuning" / "infer_lora_custom_voice.py").write_text("helper = 1\n")
             receipt = server.build_startup_receipt(
                 mode="adapter",
                 qwen_dir=qwen,
@@ -286,6 +330,8 @@ class StartupValidationTests(unittest.TestCase):
             qwen.mkdir()
             model.mkdir()
             (qwen / "source.py").write_text("value = 1\n")
+            (qwen / "qwen_tts").mkdir()
+            (qwen / "qwen_tts" / "__init__.py").write_text("value = 1\n")
             (model / "config.json").write_text('{"tts_model_type":"custom_voice"}\n')
             (model / "resume-state").mkdir()
             (model / "resume-state" / "optimizer.bin").write_bytes(b"first")
@@ -322,6 +368,8 @@ class StartupValidationTests(unittest.TestCase):
                 directory = root / name
                 directory.mkdir()
                 (directory / "file").write_bytes(b"x")
+            (root / "qwen" / "qwen_tts").mkdir()
+            (root / "qwen" / "qwen_tts" / "__init__.py").write_text("value = 1\n")
             with self.assertRaisesRegex(ValueError, "provided together"):
                 server.build_startup_receipt(
                     mode="full-sft",
