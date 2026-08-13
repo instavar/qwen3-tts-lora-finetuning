@@ -530,7 +530,14 @@ class LifecycleBackendTests(unittest.TestCase):
                 raise KeyError(self.key)
 
             def to_dict(self) -> dict:
-                return {"dtype": "bfloat16", "model_type": "qwen3_tts"}
+                return {
+                    "dtype": "bfloat16",
+                    "model_type": "qwen3_tts",
+                    "talker_config": {
+                        "dtype": "bfloat16",
+                        "hidden_size": 1024,
+                    },
+                }
 
         class Model:
             def __init__(self, key: str) -> None:
@@ -544,7 +551,9 @@ class LifecycleBackendTests(unittest.TestCase):
         FULL_TRAINER._save_pretrained_with_full_config(
             model, Path("checkpoint"), {"weight": "fixture"}
         )
-        self.assertEqual(model.saved[1]["dtype"], "bfloat16")
+        self.assertNotIn("dtype", model.saved[1])
+        self.assertNotIn("dtype", model.saved[1]["talker_config"])
+        self.assertEqual(model.saved[1]["talker_config"]["hidden_size"], 1024)
         with self.assertRaisesRegex(KeyError, "dtype"):
             model.config.to_diff_dict()
         with self.assertRaisesRegex(KeyError, "unexpected"):

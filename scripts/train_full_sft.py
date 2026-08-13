@@ -202,6 +202,18 @@ def _runtime_contract(
     }
 
 
+def _without_runtime_dtype_fields(value):
+    if isinstance(value, dict):
+        return {
+            key: _without_runtime_dtype_fields(item)
+            for key, item in value.items()
+            if key != "dtype"
+        }
+    if isinstance(value, list):
+        return [_without_runtime_dtype_fields(item) for item in value]
+    return value
+
+
 def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict) -> None:
     """Work around Transformers 4.57 nested Qwen config diff serialization."""
     config = model.config
@@ -212,7 +224,9 @@ def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict)
             raise
         config_type = type(config)
         original_to_diff_dict = config_type.to_diff_dict
-        config_type.to_diff_dict = lambda self: self.to_dict()
+        config_type.to_diff_dict = lambda self: _without_runtime_dtype_fields(
+            self.to_dict()
+        )
         try:
             model.save_pretrained(
                 output_dir,
