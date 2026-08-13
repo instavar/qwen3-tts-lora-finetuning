@@ -268,6 +268,28 @@ research package. This avoids distributing optimizer-bearing state and prevents
 the full training snapshot from being mistaken for the reloadable inference
 artifact. Keep the original training output separately if resume is required.
 
+### Experimental OpenAI-compatible speech server
+
+[`tools/openai_speech_server.py`](tools/openai_speech_server.py) exposes one
+fixed LoRA adapter or full-SFT checkpoint through `GET /healthz`, `GET
+/readyz`, and `POST /v1/audio/speech`. Requests can supply text and optional
+instructions, but cannot select paths, checkpoints, seeds, speakers, or output
+destinations. The process validates the registered voice before readiness,
+serializes mutable model generation, rejects overlap with HTTP 429, and writes
+only bounded server-owned temporary WAV files.
+
+The fixed-artifact startup receipt hashes the runtime source, inference model,
+optional adapter, and generation controls without retaining local paths. The
+live qualification tools bind a frozen plan row to the HTTP result, compare it
+with the matching CLI row, and probe malformed plus overlapping requests.
+
+The first full-SFT CUDA drill produced a valid instruction-bearing row, matched
+the neutral CLI WAV byte-for-byte, and reproduced the receipt plus WAV after a
+complete restart. That is one fixed-artifact compatibility result, not a LoRA,
+quality, load, gateway, or production claim. See
+[`docs/openai-compatible-serving.md`](docs/openai-compatible-serving.md) and
+[`reports/openai-speech-http-runtime-2026-08-14.md`](reports/openai-speech-http-runtime-2026-08-14.md).
+
 ### Frozen multi-prompt evaluation
 
 Run every Qwen row from an Instavar Voice generation plan while loading the

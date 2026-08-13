@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/qwen3-tts-lora-finetuning",
     "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
-    "evidence_revision": "3e1f809ded13d05ea6b99bafdae98f71b4541544"
+    "evidence_revision": "ff0af6d811173ae975bed2fd2e9b04942575c7b5"
   },
   "model": {
     "family": "Qwen3-TTS",
@@ -301,14 +301,46 @@
       "notes": "Single-process only. The smoke establishes bounded compatibility, not convergence, perceptual quality, full lifecycle packaging, or production readiness."
     },
     {
-      "id": "openai_compatible_http",
-      "status": "unsupported",
+      "id": "openai_compatible_http_full_sft",
+      "status": "experimental",
+      "artifact_mode": "checkpoint",
+      "streaming": false,
+      "profile": "server",
+      "device": "cuda",
+      "interface": "http",
+      "precision": "bfloat16",
+      "batching": false,
+      "conformance": {
+        "status": "smoke_tested",
+        "clean_checkout": true,
+        "fresh_process": true,
+        "prompt_count": 2,
+        "seed_count": 1,
+        "report": "reports/openai-speech-http-runtime-2026-08-14.md"
+      },
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "docs/openai-compatible-serving.md",
+          "claim": "A fixed-artifact OpenAI-compatible speech subset serves one registered full-SFT voice and includes dependency-light qualification, CLI parity, and malformed plus overlap probes."
+        },
+        {
+          "level": "smoke_tested",
+          "ref": "reports/openai-speech-http-runtime-2026-08-14.md",
+          "claim": "The bounded full-SFT checkpoint produced valid neutral and instruction-bearing HTTP WAVs, exact neutral CLI and restart equality, and expected fail-closed malformed plus overlapping-request results."
+        }
+      ],
+      "notes": "One full-SFT checkpoint, seed, neutral row, instruction-bearing row, host, and dependency stack passed. No complete frozen-plan, load, cancellation, OOM, gateway, or quality qualification exists."
+    },
+    {
+      "id": "openai_compatible_http_adapter",
+      "status": "experimental",
       "artifact_mode": "adapter",
       "streaming": false,
       "profile": "server",
       "device": "cuda",
       "interface": "http",
-      "precision": "not implemented",
+      "precision": "runtime configured",
       "batching": false,
       "conformance": {
         "status": "not_run",
@@ -317,8 +349,14 @@
         "prompt_count": 0,
         "seed_count": 0
       },
-      "evidence": [],
-      "notes": "No HTTP serving implementation is maintained in this focused companion."
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "docs/openai-compatible-serving.md",
+          "claim": "The same fixed-artifact server declares a base-model plus LoRA adapter load path with explicit scale and merge mode."
+        }
+      ],
+      "notes": "The adapter HTTP path has dependency-free contract coverage only. It has not loaded a real adapter or completed CLI parity."
     }
   ],
   "evaluation": {
@@ -372,7 +410,9 @@
     "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
     "Full SFT epoch-boundary resume has one same-host, same-version interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
-    "No alternative runtime has passed adapter-aware conformance.",
+    "The full-SFT HTTP reference server has one exact CLI and restart row plus one valid instruction-bearing row; sustained load, disconnect cancellation, timeout, OOM recovery, multi-worker behavior, real gateway behavior, and perceptual quality remain untested.",
+    "The LoRA HTTP path is implemented but has not loaded a real adapter or completed CLI parity.",
+    "No inherited non-PyTorch runtime has passed adapter-aware conformance.",
     "The Base ICL versus epoch-10 comparison covers one long-form prompt, seed, and reference; multi-reference, multi-seed, and human ratings remain incomplete."
   ]
 }
