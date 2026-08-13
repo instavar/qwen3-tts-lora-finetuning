@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.1.0",
+  "prompt_pack": {
+    "id": "instavar-singapore-english",
+    "version": "1.2.0",
+    "sha256": "749b3fb2e03e64f3440704bdb5ee4509a77a08dd473a7d20a8a20ecc6f0e42fd"
+  },
+  "candidate_ids": [
+    "qwen3-full-sft-bounded-resume"
+  ],
+  "seeds": [
+    42,
+    314159,
+    20260812
+  ],
+  "prompt_count": 4,
+  "sample_count": 10,
+  "samples": [
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--neutral-brief--seed-42",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "neutral-brief",
+      "category": "neutral_singapore_english",
+      "seed": 42,
+      "text": "I reviewed the notes this morning and found three details that need a little more attention. None of them is urgent, but I would like us to settle them before Friday.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/neutral-brief/seed-42.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--neutral-brief--seed-314159",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "neutral-brief",
+      "category": "neutral_singapore_english",
+      "seed": 314159,
+      "text": "I reviewed the notes this morning and found three details that need a little more attention. None of them is urgent, but I would like us to settle them before Friday.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/neutral-brief/seed-314159.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--neutral-brief--seed-20260812",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "neutral-brief",
+      "category": "neutral_singapore_english",
+      "seed": 20260812,
+      "text": "I reviewed the notes this morning and found three details that need a little more attention. None of them is urgent, but I would like us to settle them before Friday.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/neutral-brief/seed-20260812.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--local-context--seed-42",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "local-context",
+      "category": "natural_local_context",
+      "seed": 42,
+      "text": "I thought the meeting was at the office, but Marcus said everyone was already heading to Tanjong Pagar. I felt a bit paiseh, so I sent a message and took the next train.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/local-context/seed-42.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--local-context--seed-314159",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "local-context",
+      "category": "natural_local_context",
+      "seed": 314159,
+      "text": "I thought the meeting was at the office, but Marcus said everyone was already heading to Tanjong Pagar. I felt a bit paiseh, so I sent a message and took the next train.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/local-context/seed-314159.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--local-context--seed-20260812",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "local-context",
+      "category": "natural_local_context",
+      "seed": 20260812,
+      "text": "I thought the meeting was at the office, but Marcus said everyone was already heading to Tanjong Pagar. I felt a bit paiseh, so I sent a message and took the next train.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/local-context/seed-20260812.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--names-numbers--seed-42",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "names-numbers",
+      "category": "pronunciation",
+      "seed": 42,
+      "text": "Please send the revised quotation to Sze Min at Block 18, Jalan Membina, by 4:30 p.m. on 12 August. The total is S$1,248.60, including GST.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/names-numbers/seed-42.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--names-numbers--seed-314159",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "names-numbers",
+      "category": "pronunciation",
+      "seed": 314159,
+      "text": "Please send the revised quotation to Sze Min at Block 18, Jalan Membina, by 4:30 p.m. on 12 August. The total is S$1,248.60, including GST.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/names-numbers/seed-314159.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--names-numbers--seed-20260812",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "names-numbers",
+      "category": "pronunciation",
+      "seed": 20260812,
+      "text": "Please send the revised quotation to Sze Min at Block 18, Jalan Membina, by 4:30 p.m. on 12 August. The total is S$1,248.60, including GST.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/names-numbers/seed-20260812.wav"
+    },
+    {
+      "sample_id": "qwen3-full-sft-bounded-resume--structured-long-form--seed-42",
+      "candidate_id": "qwen3-full-sft-bounded-resume",
+      "prompt_id": "structured-long-form",
+      "category": "long_form_structure",
+      "seed": 42,
+      "text": "Before we decide, consider three questions. First, does the voice remain recognisable when the sentence becomes technical? Second, can it move between a short answer and a longer explanation without repeating the same rhythm? Third, what happens when the text includes parentheses, dates, and a list? The answer may differ by checkpoint. A lower validation loss can help us find candidates, but it cannot tell us whether a listener will find the voice natural after two minutes. That is why the final review uses the same text, hidden labels, and a separate reveal mapping.",
+      "expected_audio_path": "audio/qwen3-full-sft-bounded-resume/structured-long-form/seed-42.wav"
+    }
+  ],
+  "generation_requirements": {
+    "same_transcripts": true,
+    "frozen_generation_settings": true,
+    "record_failures_as_observations": true
+  }
+}

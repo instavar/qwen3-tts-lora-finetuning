@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "status": "preregistered",
+  "date": "2026-08-14",
+  "candidate_id": "qwen3-full-sft-bounded-resume",
+  "runner_revision": "0d37a624a2a3f935d3d04e43708949f6eeba99d3",
+  "upstream_revision": "6cafe5582caea83df269c36b1ce62d953a9cc66b",
+  "base_model": "Qwen3-TTS-12Hz-0.6B-Base",
+  "hardware": "NVIDIA GeForce RTX 3090 Ti, 24564 MiB",
+  "training": {
+    "initial_epochs": 1,
+    "resumed_total_epochs": 2,
+    "train_row_limit": 1,
+    "validation_row_limit": 1,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "seed": 42,
+    "precision": "bf16",
+    "attention": "flash_attention_2"
+  },
+  "generation_plan": "evaluation/preregistration/qwen3-full-sft-bounded-gpu-plan-2026-08-14.json",
+  "acceptance": {
+    "initial_training": "one finite train loss, one finite validation loss, and a reloadable checkpoint",
+    "resume": "one additional finite train loss and validation loss from content-verified optimizer and RNG state",
+    "fresh_reload": "a separate process loads the resumed checkpoint and writes valid WAV audio",
+    "frozen_generation": "all 10 rows write valid audio and preserve failure observations",
+    "objective_evaluation": "all 10 rows receive complete required objective metric coverage"
+  },
+  "non_claims": [
+    "The two optimization steps do not establish convergence or voice quality.",
+    "One row per split does not validate the full corpus or full lifecycle.",
+    "The run does not establish multi-GPU, alternative-runtime, or production-serving support.",
+    "Objective metrics do not establish accent fidelity, pronunciation, naturalness, or listening preference."
+  ]
+}
