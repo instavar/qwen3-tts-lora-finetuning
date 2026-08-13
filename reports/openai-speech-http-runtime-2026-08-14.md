@@ -19,8 +19,10 @@ real gateway, or production readiness.
 
 ## Bound environment
 
-- executed companion revision:
+- server-fix companion revision:
   `ff0af6d811173ae975bed2fd2e9b04942575c7b5`
+- reusable qualification-tool revision:
+  `324225d9ffeb03f0675e00b149d6544fbf28a61e`
 - upstream Qwen revision:
   `6cafe5582caea83df269c36b1ce62d953a9cc66b`
 - full-SFT model tree SHA-256:
@@ -43,8 +45,8 @@ real gateway, or production readiness.
 - maximum new tokens: 1,024
 
 The server checkout and upstream checkout were clean after the drill. The
-server processes owned by this task were stopped and ports 18140 and 18141 were
-not left listening.
+server processes owned by this task were stopped and ports 18140, 18141, and
+18142 were not left listening.
 
 ## Startup receipt and restart
 
@@ -80,6 +82,25 @@ This proves exact output equality for one deterministic full-SFT row under the
 bound settings. It does not prove semantic equivalence for other texts, seeds,
 instructions, checkpoints, artifacts, or dependency stacks.
 
+The checked-in qualification tool then selected the preregistered
+`qwen3-full-sft-bounded-resume--neutral-brief--seed-42` row directly from the
+frozen generation plan and called the live server. The 10.4-second HTTP WAV
+matched the prior CLI observation exactly:
+
+- HTTP and CLI WAV SHA-256:
+  `7d4fdb9b56efd269fddfeb5c6a922c93dd9a809d148554101512b71ff050770c`
+- HTTP observation SHA-256:
+  `f9a2b37ecf7d1592f73e1026efbd4893fb4b7cad4137eb91053df17d64fb1080`
+- parity report SHA-256:
+  `8274c9af40acda2e7d3ff35762c4b87e2225c8390cb620f6784ee3c3ff092321`
+- startup receipt SHA-256:
+  `d034945e37ba108dcf9b65d6ee40486dec8f166e904fbf303785454c93085c03`
+
+This second equality check is stronger operational evidence because the tool
+binds the HTTP request to an exact frozen-plan candidate and sample instead of
+accepting free-form text at qualification time. It is still one row and one
+seed, so it does not establish plan-wide equivalence.
+
 The instruction-bearing request used:
 
 - text: `The rain eased just before sunset, and the city began to glow.`
@@ -112,6 +133,12 @@ The long primary overlap WAV had SHA-256
 The contract-probe report SHA-256 was
 `fec48efd4eb35d6d45fe1db5e7c1114de2a933aae41632e9ae3e75592f6a7eeb`.
 
+The checked-in probe tool independently repeated the fixed-model, path-field,
+format, instruction-size, and concurrency cases. All five passed. Its primary
+overlap request returned a valid WAV while the competing request returned HTTP
+429 `server_busy`. The resulting report SHA-256 was
+`4a08dbc9e51e37b6929e89a42e2878891de37e9cf48111f5fec7b8905b058edb`.
+
 These probes do not establish behavior under many simultaneous connections,
 client disconnect, request timeout, process termination during generation,
 GPU OOM, worker restart, reverse proxy normalization, or adversarial network
@@ -138,5 +165,6 @@ The retained evidence root is:
 
 Important files include the two successful startup receipts, neutral HTTP and
 CLI WAV files, post-restart WAV, instruction WAV, overlap WAV, response-header
-records, OOD probe report, and restart comparison. Failed receipts and the
-initial false-readiness attempt were preserved instead of overwritten.
+records, OOD probe reports, frozen-plan HTTP observation, exact parity report,
+and restart comparison. Failed receipts and the initial false-readiness attempt
+were preserved instead of overwritten.
