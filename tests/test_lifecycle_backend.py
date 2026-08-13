@@ -521,6 +521,36 @@ class LifecycleBackendTests(unittest.TestCase):
                 after["init_model_artifact"]["manifest"]["sha256"],
             )
 
+    def test_full_sft_checkpoint_uses_full_config_only_for_known_dtype_bug(self) -> None:
+        class Config:
+            def __init__(self, key: str) -> None:
+                self.key = key
+
+            def to_diff_dict(self) -> dict:
+                raise KeyError(self.key)
+
+            def to_dict(self) -> dict:
+                return {"dtype": "bfloat16", "model_type": "qwen3_tts"}
+
+        class Model:
+            def __init__(self, key: str) -> None:
+                self.config = Config(key)
+                self.saved = None
+
+            def save_pretrained(self, output_dir, **kwargs) -> None:
+                self.saved = (output_dir, self.config.to_diff_dict(), kwargs)
+
+        model = Model("dtype")
+        FULL_TRAINER._save_pretrained_with_full_config(
+            model, Path("checkpoint"), {"weight": "fixture"}
+        )
+        self.assertEqual(model.saved[1]["dtype"], "bfloat16")
+        self.assertNotIn("to_diff_dict", model.config.__dict__)
+        with self.assertRaisesRegex(KeyError, "unexpected"):
+            FULL_TRAINER._save_pretrained_with_full_config(
+                Model("unexpected"), Path("checkpoint"), {}
+            )
+
     def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             experiment = Path(temporary) / "experiment.json"

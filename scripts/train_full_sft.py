@@ -202,6 +202,31 @@ def _runtime_contract(
     }
 
 
+def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict) -> None:
+    """Work around Transformers 4.57 nested Qwen config diff serialization."""
+    config = model.config
+    try:
+        config.to_diff_dict()
+    except KeyError as error:
+        if error.args != ("dtype",):
+            raise
+        config.to_diff_dict = lambda: config.to_dict()
+        try:
+            model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                safe_serialization=True,
+            )
+        finally:
+            del config.to_diff_dict
+        return
+    model.save_pretrained(
+        output_dir,
+        state_dict=state_dict,
+        safe_serialization=True,
+    )
+
+
 def _resume_state(
     checkpoint: Path | None,
     expected_contract: dict,
@@ -419,11 +444,7 @@ def _save_checkpoint(
     output_dir.mkdir(parents=True, exist_ok=False)
     accelerator.save_state(output_dir / "resume-state", safe_serialization=True)
     resume_state_manifest = _tree_manifest(output_dir / "resume-state")
-    core_model.save_pretrained(
-        output_dir,
-        state_dict=state_dict,
-        safe_serialization=True,
-    )
+    _save_pretrained_with_full_config(core_model, output_dir, state_dict)
     processor.save_pretrained(output_dir)
     metadata = {
         "schema_version": "1.2.0",
