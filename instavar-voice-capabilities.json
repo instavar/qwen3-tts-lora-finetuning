@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/qwen3-tts-lora-finetuning",
     "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
-    "evidence_revision": "e427ab04527e4829176d576f8f0a0a86055072b3"
+    "evidence_revision": "06f4dcbe51bdb7b1969305022971ffbceb72313b"
   },
   "model": {
     "family": "Qwen3-TTS",
