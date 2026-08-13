@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/qwen3-tts-lora-finetuning",
     "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
-    "evidence_revision": "06f4dcbe51bdb7b1969305022971ffbceb72313b"
+    "evidence_revision": "3e1f809ded13d05ea6b99bafdae98f71b4541544"
   },
   "model": {
     "family": "Qwen3-TTS",
@@ -81,9 +81,14 @@
               "level": "repository_declared",
               "ref": "README.md#frozen-multi-prompt-evaluation",
               "claim": "The runner exposes a fail-closed upstream Base voice-clone control separately from adapter and full-SFT generation."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/matched-long-form-base-adapter-2026-08-13.md",
+              "claim": "One Base ICL versus epoch-10 LoRA long-form pair completed all required objective metrics, non-directional prosody comparison, and focused blind-pack generation."
             }
           ],
-          "boundary": "The selected adapter has no matched base-model matrix or complete blind ratings."
+          "boundary": "The matched Base ICL comparison covers one prompt, seed, and reference. The conditioning APIs differ, and no blind ratings, multi-reference matrix, or quality winner is recorded."
         },
         "packaging": {
           "status": "repository_declared",
@@ -194,11 +199,12 @@
       "precision": "bfloat16",
       "batching": false,
       "conformance": {
-        "status": "not_run",
+        "status": "smoke_tested",
         "clean_checkout": true,
-        "fresh_process": false,
-        "prompt_count": 0,
-        "seed_count": 0
+        "fresh_process": true,
+        "prompt_count": 1,
+        "seed_count": 1,
+        "report": "reports/matched-long-form-base-adapter-2026-08-13.md"
       },
       "evidence": [
         {
@@ -207,7 +213,7 @@
           "claim": "The Base control uses the upstream ICL voice-clone API with an explicit reference recording and transcript."
         }
       ],
-      "notes": "Instruction-bearing rows fail closed because the Base voice-clone API does not implement CustomVoice instructions. Real GPU conformance is pending."
+      "notes": "One clean-checkout GPU long-form prompt passed. Instruction-bearing rows fail closed because the Base voice-clone API does not implement CustomVoice instructions."
     },
     {
       "id": "pytorch",
@@ -315,7 +321,6 @@
       "baseline_candidate": "qwen3-tts-base",
       "adapted_candidate": "qwen3-tts-epoch-10",
       "blockers": [
-        "No frozen base-model observation matrix exists for the same prompts and seeds.",
         "Blind listening ratings are incomplete."
       ]
     }
@@ -333,6 +338,6 @@
     "Full SFT epoch-boundary resume has dependency-free contract coverage but no recorded interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
     "No alternative runtime has passed adapter-aware conformance.",
-    "The 21-row frozen runtime suite has no human ratings or base-model comparison."
+    "The Base ICL versus epoch-10 comparison covers one long-form prompt, seed, and reference; multi-reference, multi-seed, and human ratings remain incomplete."
   ]
 }

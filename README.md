@@ -309,6 +309,11 @@ failures, and writes audio under the plan's expected path. It does not run ASR,
 speaker similarity, or human listening and therefore does not make a quality
 claim.
 
+The first Base ICL versus epoch-10 LoRA long-form pair is documented in
+[`reports/matched-long-form-base-adapter-2026-08-13.md`](reports/matched-long-form-base-adapter-2026-08-13.md).
+It completed objective and non-directional prosody coverage and prepared a
+focused blind pack. It did not produce a quality winner or listening ratings.
+
 The executable lifecycle passes `--allow-invalid-output` so invalid generations
 remain evidence instead of aborting before packaging. It then uses evaluator
 revision `8feadf7bbda75abe1c305c63e362c41b86451cda` to create
