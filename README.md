@@ -267,6 +267,7 @@ base model and adapter once:
 ```bash
 python scripts/run_evaluation_suite.py \
   --qwen-dir /path/to/Qwen3-TTS \
+  --inference-mode adapter \
   --base-model /path/to/Qwen3-TTS-12Hz-1.7B-Base \
   --adapter /path/to/checkpoint-epoch-10 \
   --generation-plan evaluation/generation-plan.json \
@@ -276,9 +277,32 @@ python scripts/run_evaluation_suite.py \
 ```
 
 For a full-SFT checkpoint, replace `--base-model` and `--adapter` with
-`--model /path/to/checkpoint-epoch-2` and use runtime ID
-`pytorch_full_sft`. The runner rejects ambiguous invocations that provide both
-artifact forms.
+`--inference-mode full-sft --model /path/to/checkpoint-epoch-2` and use runtime
+ID `pytorch_full_sft`.
+
+For an unchanged upstream-base control, use the Base model's ICL voice-clone
+path with the exact retained reference shared by the comparison:
+
+```bash
+python scripts/run_evaluation_suite.py \
+  --qwen-dir /path/to/Qwen3-TTS \
+  --inference-mode base-clone \
+  --base-model /path/to/Qwen3-TTS-12Hz-1.7B-Base \
+  --reference-audio /path/to/female01-reference.wav \
+  --reference-text "The exact transcript of the reference recording." \
+  --generation-plan evaluation/generation-plan.json \
+  --candidate-id qwen3-base-clone \
+  --runtime-id pytorch \
+  --output-dir evaluation/qwen3-base-clone
+```
+
+Base-clone mode forbids adapter and full-SFT artifacts, verifies that the model
+declares `tts_model_type: base`, and rejects instruction-bearing plan rows
+because the Base voice-clone API does not support CustomVoice instructions.
+Adapter and full-SFT modes reject reference inputs. Every observation records
+an explicit artifact mode and device-aware runtime label, including failed
+attempts. Legacy adapter and full-SFT commands without `--inference-mode`
+remain accepted only when their artifact flags select exactly one condition.
 
 The runner records one observation for every planned attempt, including
 failures, and writes audio under the plan's expected path. It does not run ASR,

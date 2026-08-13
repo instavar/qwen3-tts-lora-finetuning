@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a frozen Instavar Voice generation plan with one loaded Qwen3-TTS adapter."""
+"""Run a frozen Instavar Voice plan with one Qwen3-TTS inference condition."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
-
+from evaluation_contract import reject_unsupported_plan_rows, resolve_inference_mode
 
 IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
@@ -24,9 +24,12 @@ IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qwen-dir", type=Path, required=True)
+    parser.add_argument("--inference-mode", choices=("adapter", "base-clone", "full-sft"))
     parser.add_argument("--base-model")
     parser.add_argument("--adapter", type=Path)
     parser.add_argument("--model")
+    parser.add_argument("--reference-audio", type=Path)
+    parser.add_argument("--reference-text")
     parser.add_argument("--generation-plan", type=Path, required=True)
     parser.add_argument("--candidate-id", required=True)
     parser.add_argument("--runtime-id", default="pytorch")
@@ -49,12 +52,7 @@ def parse_args() -> argparse.Namespace:
         help="return success after recording every planned attempt even when an output is invalid",
     )
     args = parser.parse_args()
-    if bool(args.adapter) == bool(args.model):
-        parser.error("provide exactly one of --adapter or --model")
-    if args.adapter and not args.base_model:
-        parser.error("--base-model is required with --adapter")
-    if args.model and args.base_model:
-        parser.error("--base-model cannot be combined with --model")
+    args.inference_mode = resolve_inference_mode(args, parser)
     return args
 
 
@@ -112,11 +110,13 @@ def runtime_artifact_fields(args: argparse.Namespace) -> dict[str, str]:
 
 def main() -> int:
     args = parse_args()
-    uses_cuda = args.device.split(":", 1)[0].casefold() == "cuda"
+    device_family = args.device.split(":", 1)[0].casefold()
+    uses_cuda = device_family == "cuda"
     if uses_cuda and not torch.cuda.is_available():
         raise RuntimeError("CUDA runtime was requested but is unavailable")
     artifact_fields = runtime_artifact_fields(args)
     rows = read_plan(args.generation_plan, args.candidate_id)
+    reject_unsupported_plan_rows(args.inference_mode, rows, argparse.ArgumentParser())
     finetuning_dir = args.qwen_dir.resolve() / "finetuning"
     if not finetuning_dir.is_dir():
         raise FileNotFoundError(f"Qwen finetuning directory not found: {finetuning_dir}")
@@ -131,8 +131,8 @@ def main() -> int:
         torch_dtype=dtype_map[args.dtype],
         attn_implementation=args.attention,
     )
-    artifact_kind = "full_sft"
-    if args.adapter:
+    artifact_kind = args.inference_mode.replace("-", "_")
+    if args.inference_mode == "adapter":
         from peft import PeftModel
 
         helper = importlib.import_module("infer_lora_custom_voice")
@@ -165,17 +165,29 @@ def main() -> int:
             "seed": row["seed"],
             "requested_text": row["text"],
             "valid": False,
-            "runtime": f"qwen3_tts_pytorch_cuda_{artifact_kind}",
+            "runtime": f"qwen3_tts_pytorch_{device_family}_{artifact_kind}",
             **artifact_fields,
+            "artifact_mode": artifact_kind,
+            "instruction_applied": False,
         }
         try:
-            wavs, sample_rate = tts.generate_custom_voice(
-                text=row["text"],
-                speaker=args.speaker_name,
-                language=args.language,
-                instruct=row.get("instruction"),
-                max_new_tokens=args.max_new_tokens,
-            )
+            if args.inference_mode == "base-clone":
+                wavs, sample_rate = tts.generate_voice_clone(
+                    text=row["text"],
+                    language=args.language,
+                    ref_audio=str(args.reference_audio),
+                    ref_text=args.reference_text,
+                    x_vector_only_mode=False,
+                    max_new_tokens=args.max_new_tokens,
+                )
+            else:
+                wavs, sample_rate = tts.generate_custom_voice(
+                    text=row["text"],
+                    speaker=args.speaker_name,
+                    language=args.language,
+                    instruct=row.get("instruction"),
+                    max_new_tokens=args.max_new_tokens,
+                )
             sf.write(output, wavs[0], sample_rate)
             if uses_cuda:
                 torch.cuda.synchronize()

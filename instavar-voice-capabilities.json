@@ -76,6 +76,11 @@
               "level": "smoke_tested",
               "ref": "reports/runtime-smoke-2026-08-12.md",
               "claim": "Runtime coverage and bounded objective checks were recorded."
+            },
+            {
+              "level": "repository_declared",
+              "ref": "README.md#frozen-multi-prompt-evaluation",
+              "claim": "The runner exposes a fail-closed upstream Base voice-clone control separately from adapter and full-SFT generation."
             }
           ],
           "boundary": "The selected adapter has no matched base-model matrix or complete blind ratings."
@@ -178,6 +183,32 @@
     }
   },
   "runtimes": [
+    {
+      "id": "pytorch_base_clone",
+      "status": "experimental",
+      "artifact_mode": "base",
+      "streaming": false,
+      "profile": "reference",
+      "device": "cuda",
+      "interface": "cli",
+      "precision": "bfloat16",
+      "batching": false,
+      "conformance": {
+        "status": "not_run",
+        "clean_checkout": true,
+        "fresh_process": false,
+        "prompt_count": 0,
+        "seed_count": 0
+      },
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "README.md#frozen-multi-prompt-evaluation",
+          "claim": "The Base control uses the upstream ICL voice-clone API with an explicit reference recording and transcript."
+        }
+      ],
+      "notes": "Instruction-bearing rows fail closed because the Base voice-clone API does not implement CustomVoice instructions. Real GPU conformance is pending."
+    },
     {
       "id": "pytorch",
       "status": "supported",

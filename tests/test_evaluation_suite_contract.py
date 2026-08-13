@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import ast
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from evaluation_contract import reject_unsupported_plan_rows, resolve_inference_mode
 
 
 class EvaluationSuiteContractTests(unittest.TestCase):
@@ -23,9 +28,59 @@ class EvaluationSuiteContractTests(unittest.TestCase):
         self.assertIn('not in {"1.0.0", "1.1.0"}', source)
         self.assertNotIn("max_memory_allocated()) if torch.cuda.is_available() else 0", source)
         self.assertTrue(any(isinstance(node, ast.For) for node in ast.walk(tree)))
-        self.assertIn("provide exactly one of --adapter or --model", source)
-        self.assertIn('artifact_kind = "full_sft"', source)
-        self.assertIn('artifact_kind = "adapter"', source)
+        self.assertIn('choices=("adapter", "base-clone", "full-sft")', source)
+        self.assertIn("generate_voice_clone", source)
+        self.assertIn('"artifact_mode": artifact_kind', source)
+        self.assertIn('f"qwen3_tts_pytorch_{device_family}_{artifact_kind}"', source)
+
+    def test_inference_modes_reject_ambiguous_and_unsupported_conditions(self) -> None:
+        parser = argparse.ArgumentParser()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / "base"
+            adapted = root / "adapted"
+            adapter = root / "adapter"
+            for path, kind in ((base, "base"), (adapted, "custom_voice"), (adapter, None)):
+                path.mkdir()
+                if kind:
+                    (path / "config.json").write_text(f'{{"tts_model_type":"{kind}"}}', encoding="utf-8")
+            reference = root / "reference.wav"
+            reference.write_bytes(b"wav")
+
+            args = argparse.Namespace(
+                inference_mode="base-clone",
+                base_model=str(base),
+                adapter=None,
+                model=None,
+                reference_audio=reference,
+                reference_text="reference text",
+            )
+            self.assertEqual(resolve_inference_mode(args, parser), "base-clone")
+
+            args.adapter = adapter
+            with self.assertRaises(SystemExit):
+                resolve_inference_mode(args, parser)
+
+            args.adapter = None
+            args.reference_audio = None
+            with self.assertRaises(SystemExit):
+                resolve_inference_mode(args, parser)
+
+            args.reference_audio = reference
+            args.reference_text = "reference text"
+            args.base_model = str(adapted)
+            with self.assertRaises(SystemExit):
+                resolve_inference_mode(args, parser)
+
+            with self.assertRaises(SystemExit):
+                reject_unsupported_plan_rows("base-clone", [{"instruction": "sound calm"}], parser)
+
+            args.inference_mode = "full-sft"
+            args.base_model = None
+            args.model = str(adapted)
+            args.reference_audio = None
+            args.reference_text = None
+            self.assertEqual(resolve_inference_mode(args, parser), "full-sft")
 
     def test_full_sft_trainer_keeps_known_fixes_and_fails_closed_on_multi_process(self) -> None:
         source = (ROOT / "scripts" / "train_full_sft.py").read_text(encoding="utf-8")
