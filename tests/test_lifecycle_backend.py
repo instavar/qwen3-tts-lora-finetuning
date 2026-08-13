@@ -536,7 +536,7 @@ class LifecycleBackendTests(unittest.TestCase):
             manifests: dict[str, str] = {}
             for split in ("train", "validation", "test"):
                 audio = root / f"{split}.wav"
-                audio.write_bytes(b"fixture")
+                audio.write_bytes(f"fixture:{split}".encode())
                 manifest = root / f"{split}.jsonl"
                 manifest.write_text(json.dumps({"audio": str(audio), "text": f"{split} text"}) + "\n")
                 manifests[split] = str(manifest)
