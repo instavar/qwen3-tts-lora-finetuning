@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 
@@ -25,6 +26,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-model-path", type=Path, required=True)
     parser.add_argument("--train-jsonl", type=Path, required=True)
     parser.add_argument("--val-jsonl", type=Path)
+    parser.add_argument(
+        "--train-row-limit",
+        type=int,
+        default=0,
+        help="Use only the first N training rows; 0 consumes the full manifest.",
+    )
+    parser.add_argument(
+        "--validation-row-limit",
+        type=int,
+        default=0,
+        help="Use only the first N validation rows; 0 consumes the full manifest.",
+    )
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--eval-batch-size", type=int)
     parser.add_argument("--learning-rate", type=float, default=2e-6)
@@ -63,7 +76,8 @@ def _positive_finite(value: float, name: str) -> float:
     return value
 
 
-def _load_rows(path: Path) -> list[dict]:
+def _load_rows(path: Path, row_limit: int = 0) -> list[dict]:
+    _nonnegative(row_limit, "row limit")
     rows: list[dict] = []
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
@@ -73,6 +87,8 @@ def _load_rows(path: Path) -> list[dict]:
             if not isinstance(value, dict):
                 raise ValueError(f"{path}:{line_number} must contain a JSON object")
             rows.append(value)
+            if row_limit and len(rows) >= row_limit:
+                break
     if not rows:
         raise ValueError(f"manifest contains no rows: {path}")
     return rows
@@ -122,6 +138,23 @@ def _training_contract(args: argparse.Namespace) -> dict:
     qwen_dir = args.qwen_dir.resolve()
     dataset_source = qwen_dir / "finetuning" / "dataset.py"
     model_loader_source = qwen_dir / "qwen_tts" / "inference" / "qwen3_tts_model.py"
+    init_model_path = Path(args.init_model_path).expanduser()
+    if init_model_path.exists():
+        resolved_model = init_model_path.resolve()
+        init_model_artifact = {
+            "kind": "local_directory",
+            "path": str(resolved_model),
+            "manifest": _tree_manifest(resolved_model),
+        }
+    else:
+        init_model_artifact = {
+            "kind": "model_identifier",
+            "identifier": str(args.init_model_path),
+            "boundary": (
+                "The identifier is recorded but its remotely resolved bytes are not "
+                "content-bound by this checkpoint."
+            ),
+        }
     return {
         "schema_version": "1.0.0",
         "trainer_sha256": _sha256(Path(__file__).resolve()),
@@ -130,6 +163,7 @@ def _training_contract(args: argparse.Namespace) -> dict:
             "model_loader_py_sha256": _sha256(model_loader_source),
         },
         "init_model_path": str(args.init_model_path),
+        "init_model_artifact": init_model_artifact,
         "train_jsonl": {"path": str(train_jsonl), "sha256": _sha256(train_jsonl)},
         "val_jsonl": (
             {"path": str(val_jsonl), "sha256": _sha256(val_jsonl)}
@@ -138,6 +172,8 @@ def _training_contract(args: argparse.Namespace) -> dict:
         ),
         "batch_size": args.batch_size,
         "eval_batch_size": args.eval_batch_size,
+        "train_row_limit": getattr(args, "train_row_limit", 0),
+        "validation_row_limit": getattr(args, "validation_row_limit", 0),
         "learning_rate": args.learning_rate,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "mixed_precision": args.mixed_precision,
@@ -193,8 +229,8 @@ def _resume_state(
             f"resume metadata is missing or unsafe: {metadata_path}"
         )
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("schema_version") != "1.1.0":
-        raise ValueError("resume checkpoint requires metadata schema 1.1.0")
+    if metadata.get("schema_version") not in {"1.1.0", "1.2.0"}:
+        raise ValueError("resume checkpoint requires metadata schema 1.1.0 or 1.2.0")
     if metadata.get("adaptation_mode") != "full_sft":
         raise ValueError("resume checkpoint adaptation_mode must equal full_sft")
     if metadata.get("training_contract") != expected_contract:
@@ -341,6 +377,8 @@ def _save_checkpoint(
     completed_epochs: int,
     training_contract: dict,
     runtime_contract: dict,
+    training_observation: dict,
+    resume_provenance: dict | None,
     accelerator,
     torch,
 ) -> None:
@@ -388,7 +426,7 @@ def _save_checkpoint(
     )
     processor.save_pretrained(output_dir)
     metadata = {
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "adaptation_mode": "full_sft",
         "completed_epochs": completed_epochs,
         "speaker_name": speaker_name,
@@ -397,6 +435,8 @@ def _save_checkpoint(
         "training_seed": training_seed,
         "training_contract": training_contract,
         "runtime_contract": runtime_contract,
+        "training_observation": training_observation,
+        "resume_provenance": resume_provenance,
         "resume_state": resume_state_manifest,
         "distributed_processes": accelerator.num_processes,
         "evidence_boundary": (
@@ -423,6 +463,8 @@ def main() -> int:
         _positive(value, name)
     _nonnegative(args.speaker_id, "speaker id")
     _nonnegative(args.speaker_reference_index, "speaker reference index")
+    _nonnegative(args.train_row_limit, "train row limit")
+    _nonnegative(args.validation_row_limit, "validation row limit")
     _positive_finite(args.learning_rate, "learning rate")
     if args.eval_batch_size is not None:
         _positive(args.eval_batch_size, "eval batch size")
@@ -462,6 +504,16 @@ def main() -> int:
         trust_resume_state=args.trust_resume_state,
         expected_runtime_contract=runtime_contract,
     )
+    resume_provenance = None
+    if args.resume_from_checkpoint is not None:
+        resume_root = args.resume_from_checkpoint.expanduser().resolve()
+        resume_provenance = {
+            "checkpoint_path": str(resume_root),
+            "metadata_sha256": _sha256(
+                resume_root / "instavar-full-sft-metadata.json"
+            ),
+            "resume_state": _tree_manifest(resume_root / "resume-state"),
+        }
 
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -480,13 +532,17 @@ def main() -> int:
         "fp16": torch.float16,
         "bf16": torch.bfloat16,
     }
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     tts = Qwen3TTSModel.from_pretrained(
         args.init_model_path,
         torch_dtype=dtype_map[args.mixed_precision],
         attn_implementation=args.attention,
     )
     config = AutoConfig.from_pretrained(args.init_model_path)
-    train_dataset = TTSDataset(_load_rows(args.train_jsonl), tts.processor, config)
+    train_dataset = TTSDataset(
+        _load_rows(args.train_jsonl, args.train_row_limit), tts.processor, config
+    )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -496,7 +552,9 @@ def main() -> int:
     validation_loader = None
     if args.val_jsonl:
         validation_dataset = TTSDataset(
-            _load_rows(args.val_jsonl), tts.processor, config
+            _load_rows(args.val_jsonl, args.validation_row_limit),
+            tts.processor,
+            config,
         )
         validation_loader = DataLoader(
             validation_dataset,
@@ -531,6 +589,9 @@ def main() -> int:
 
     model.train()
     for epoch in range(start_epoch, args.num_epochs):
+        epoch_started = time.perf_counter()
+        epoch_losses: list[float] = []
+        optimizer_steps = 0
         for step, batch in enumerate(train_loader):
             with accelerator.accumulate(model):
                 loss = _compute_loss(model, batch, torch)
@@ -539,17 +600,41 @@ def main() -> int:
                     accelerator.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 optimizer.zero_grad()
+            epoch_losses.append(float(loss.detach().item()))
+            if accelerator.sync_gradients:
+                optimizer_steps += 1
             if step % 10 == 0:
                 accelerator.print(
                     f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}"
                 )
 
+        validation_loss = None
         if validation_loader is not None and (epoch + 1) % args.eval_every == 0:
             validation_loss = _evaluate(model, validation_loader, accelerator, torch)
             accelerator.print(f"Epoch {epoch} | Validation loss: {validation_loss:.4f}")
             model.train()
 
         if (epoch + 1) % args.save_every == 0:
+            training_observation = {
+                "epoch_index": epoch,
+                "completed_epochs": epoch + 1,
+                "microbatches": len(epoch_losses),
+                "optimizer_steps": optimizer_steps,
+                "mean_training_loss": sum(epoch_losses) / len(epoch_losses),
+                "final_training_loss": epoch_losses[-1],
+                "validation_loss": validation_loss,
+                "epoch_seconds": time.perf_counter() - epoch_started,
+                "peak_cuda_memory_allocated_bytes": (
+                    int(torch.cuda.max_memory_allocated())
+                    if torch.cuda.is_available()
+                    else None
+                ),
+                "peak_cuda_memory_reserved_bytes": (
+                    int(torch.cuda.max_memory_reserved())
+                    if torch.cuda.is_available()
+                    else None
+                ),
+            }
             _save_checkpoint(
                 model,
                 tts.processor,
@@ -562,6 +647,8 @@ def main() -> int:
                 completed_epochs=epoch + 1,
                 training_contract=training_contract,
                 runtime_contract=runtime_contract,
+                training_observation=training_observation,
+                resume_provenance=resume_provenance,
                 accelerator=accelerator,
                 torch=torch,
             )

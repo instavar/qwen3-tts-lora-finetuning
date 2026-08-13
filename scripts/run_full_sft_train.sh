@@ -14,6 +14,8 @@ args=(
   --init-model-path "${INIT_MODEL_PATH}"
   --output-model-path "${OUTPUT_DIR}"
   --train-jsonl "${TRAIN_JSONL}"
+  --train-row-limit "${TRAIN_ROW_LIMIT:-0}"
+  --validation-row-limit "${VALIDATION_ROW_LIMIT:-0}"
   --batch-size "${BATCH_SIZE:-2}"
   --learning-rate "${LR:-2e-6}"
   --num-epochs "${EPOCHS:-3}"

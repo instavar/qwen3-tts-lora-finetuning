@@ -299,6 +299,13 @@ class LifecycleBackendTests(unittest.TestCase):
                 FULL_TRAINER._load_rows(manifest)
             manifest.write_text('{"audio": "one.wav", "text": "one"}\n')
             self.assertEqual(FULL_TRAINER._load_rows(manifest)[0]["text"], "one")
+            manifest.write_text(
+                '{"audio": "one.wav", "text": "one"}\n'
+                '{"audio": "two.wav", "text": "two"}\n'
+            )
+            self.assertEqual(len(FULL_TRAINER._load_rows(manifest, 1)), 1)
+            with self.assertRaisesRegex(ValueError, "row limit"):
+                FULL_TRAINER._load_rows(manifest, -1)
 
     def test_full_sft_resume_binds_contract_state_and_epoch_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -331,6 +338,8 @@ class LifecycleBackendTests(unittest.TestCase):
                 seed=42,
                 save_every=1,
                 eval_every=1,
+                train_row_limit=0,
+                validation_row_limit=0,
             )
             contract = FULL_TRAINER._training_contract(args)
             runtime = {
@@ -458,12 +467,58 @@ class LifecycleBackendTests(unittest.TestCase):
                 seed=42,
                 save_every=1,
                 eval_every=1,
+                train_row_limit=0,
+                validation_row_limit=0,
             )
             before = FULL_TRAINER._training_contract(args)
             train.write_text('{"audio": "train.wav", "text": "two"}\n')
             after = FULL_TRAINER._training_contract(args)
             self.assertNotEqual(
                 before["train_jsonl"]["sha256"], after["train_jsonl"]["sha256"]
+            )
+
+    def test_full_sft_training_contract_binds_local_base_model_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            train = root / "train.jsonl"
+            model = root / "model"
+            qwen = root / "qwen"
+            model.mkdir()
+            (model / "config.json").write_text('{"model": "fixture"}\n')
+            (qwen / "finetuning").mkdir(parents=True)
+            (qwen / "qwen_tts" / "inference").mkdir(parents=True)
+            (qwen / "finetuning" / "dataset.py").write_text("# dataset\n")
+            (qwen / "qwen_tts" / "inference" / "qwen3_tts_model.py").write_text(
+                "# model loader\n"
+            )
+            train.write_text('{"audio": "train.wav", "text": "one"}\n')
+            args = argparse.Namespace(
+                init_model_path=str(model),
+                qwen_dir=qwen,
+                train_jsonl=train,
+                val_jsonl=None,
+                batch_size=1,
+                eval_batch_size=None,
+                train_row_limit=1,
+                validation_row_limit=0,
+                learning_rate=2e-6,
+                gradient_accumulation_steps=1,
+                mixed_precision="bf16",
+                attention="flash_attention_2",
+                speaker_name="fixture",
+                speaker_id=3000,
+                speaker_reference_index=0,
+                seed=42,
+                save_every=1,
+                eval_every=1,
+            )
+            before = FULL_TRAINER._training_contract(args)
+            (model / "config.json").write_text('{"model": "changed"}\n')
+            after = FULL_TRAINER._training_contract(args)
+            self.assertEqual(before["init_model_artifact"]["kind"], "local_directory")
+            self.assertNotEqual(
+                before["init_model_artifact"]["manifest"]["sha256"],
+                after["init_model_artifact"]["manifest"]["sha256"],
             )
 
     def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
