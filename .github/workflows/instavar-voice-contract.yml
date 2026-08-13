@@ -40,3 +40,7 @@ jobs:
         env:
           PYTHONPATH: .instavar-voice-evaluation
         run: python -m unittest tests/test_lifecycle_backend.py -v
+      - name: Test every dependency-free repository contract
+        env:
+          PYTHONPATH: .instavar-voice-evaluation
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
