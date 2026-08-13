@@ -343,20 +343,26 @@
       "precision": "runtime configured",
       "batching": false,
       "conformance": {
-        "status": "not_run",
+        "status": "smoke_tested",
         "clean_checkout": false,
-        "fresh_process": false,
-        "prompt_count": 0,
-        "seed_count": 0
+        "fresh_process": true,
+        "prompt_count": 1,
+        "seed_count": 1,
+        "report": "reports/openai-speech-http-runtime-2026-08-14.md"
       },
       "evidence": [
         {
           "level": "repository_declared",
           "ref": "docs/openai-compatible-serving.md",
           "claim": "The same fixed-artifact server declares a base-model plus LoRA adapter load path with explicit scale and merge mode."
+        },
+        {
+          "level": "smoke_tested",
+          "ref": "reports/openai-speech-http-runtime-2026-08-14.md",
+          "claim": "The epoch-10 adapter produced a valid long-form HTTP WAV byte-identical to the prior CLI row and a complete restart, while bounded malformed and overlapping-request probes failed closed."
         }
       ],
-      "notes": "The adapter HTTP path has dependency-free contract coverage only. It has not loaded a real adapter or completed CLI parity."
+      "notes": "One 1.7B epoch-10 adapter, long-form prompt, seed, scale, host, and dependency stack passed. The Qwen source checkout was not clean, so the receipt binds an allowlisted executable-source subset rather than asserting clean-checkout provenance. No multi-seed, quality, sustained-load, cancellation, OOM, gateway, or unmerged-adapter qualification exists."
     }
   ],
   "evaluation": {
@@ -411,7 +417,7 @@
     "Full SFT epoch-boundary resume has one same-host, same-version interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
     "The full-SFT HTTP reference server has one exact CLI and restart row plus one valid instruction-bearing row; sustained load, disconnect cancellation, timeout, OOM recovery, multi-worker behavior, real gateway behavior, and perceptual quality remain untested.",
-    "The LoRA HTTP path is implemented but has not loaded a real adapter or completed CLI parity.",
+    "The LoRA HTTP path has one exact long-form CLI and restart parity result, but no clean-source, multi-seed, perceptual, sustained-load, cancellation, OOM, gateway, or unmerged-adapter qualification.",
     "No inherited non-PyTorch runtime has passed adapter-aware conformance.",
     "The Base ICL versus epoch-10 comparison covers one long-form prompt, seed, and reference; multi-reference, multi-seed, and human ratings remain incomplete."
   ]

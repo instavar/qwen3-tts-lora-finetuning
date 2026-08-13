@@ -38,9 +38,11 @@ directory, validated as a bounded positive-duration PCM WAV, read into the
 response, and removed.
 
 When `--startup-receipt` is supplied, the server writes a no-overwrite canonical
-receipt after model loading and before serving. The receipt hashes the runtime
-source tree while excluding Git and cache state, hashes the inference model
-while excluding optimizer resume state, and hashes the adapter when present.
+receipt after model loading and before serving. The receipt hashes the imported
+`qwen_tts` package, the LoRA helper when adapter mode is selected, the inference
+model, and the adapter when present. It excludes unrelated training outputs,
+model caches, Git state, bytecode caches, and optimizer resume state. Artifact
+and source trees reject symbolic links.
 It also binds the fixed generation controls. `/readyz` exposes the receipt byte
 SHA-256. A receipt does not prove loader honesty, transitive dependency
 identity, host trust, quality, rights, or backup durability.
@@ -149,10 +151,15 @@ PYTHONPATH=/path/to/instavar-voice-evaluation \
 
 ## Evidence boundary
 
-The first full-SFT CUDA qualification is recorded in
+The full-SFT and LoRA CUDA qualifications are recorded in
 `reports/openai-speech-http-runtime-2026-08-14.md`. It establishes a clean
 fixed-artifact load, one exact HTTP versus CLI row, one instruction-bearing
 row, exact restart reproduction, and bounded malformed plus overlapping
-requests. It does not qualify the LoRA mode, multiple seeds, the complete
-frozen prompt pack, sustained load, disconnect cancellation, OOM recovery,
-multi-worker behavior, a real gateway, or perceptual quality.
+requests for full-SFT. The LoRA slice independently loaded the 1.7B epoch-10
+adapter, reproduced one frozen long-form CLI WAV exactly through HTTP and after
+restart, and repeated the bounded request probes. Its source checkout was not
+clean, so the receipt binds the allowlisted executable-source content rather
+than asserting clean-checkout provenance. These results do not qualify
+multiple seeds, the complete frozen prompt pack, the unmerged adapter route,
+sustained load, disconnect cancellation, OOM recovery, multi-worker behavior,
+a real gateway, or perceptual quality.

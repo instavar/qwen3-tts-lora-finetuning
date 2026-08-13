@@ -1,4 +1,4 @@
-# Qwen3-TTS full-SFT HTTP runtime evidence, 2026-08-14
+# Qwen3-TTS fixed-artifact HTTP runtime evidence, 2026-08-14
 
 ## Result
 
@@ -12,10 +12,15 @@ Malformed fixed-artifact probes failed before model entry. An overlapping
 request received HTTP 429 while the primary generation completed successfully.
 The server remained ready after the OOD probes.
 
+The same server then loaded the retained Qwen3-TTS 1.7B epoch-10 LoRA adapter.
+Its frozen long-form HTTP row matched the prior CLI WAV byte-for-byte and
+remained identical after a complete restart. The adapter process also passed
+the bounded malformed and overlapping-request probes.
+
 This is a narrow runtime compatibility qualification. It does not establish
-the LoRA HTTP mode, complete frozen-plan coverage, instruction obedience,
-quality, sustained load, cancellation, OOM recovery, multi-worker behavior, a
-real gateway, or production readiness.
+complete frozen-plan coverage, instruction obedience, quality, sustained load,
+cancellation, OOM recovery, multi-worker behavior, a real gateway, or
+production readiness.
 
 ## Bound environment
 
@@ -144,7 +149,64 @@ client disconnect, request timeout, process termination during generation,
 GPU OOM, worker restart, reverse proxy normalization, or adversarial network
 traffic.
 
-## Failure that improved the implementation
+## LoRA adapter runtime
+
+The adapter qualification used:
+
+- companion revision:
+  `f0a49313b5e8b60419c10322d5a7c2e3231cf533`
+- Qwen source revision:
+  `6cafe5582caea83df269c36b1ce62d953a9cc66b`
+- base model: Qwen3-TTS-12Hz-1.7B-Base
+- adapter: retained FEMALE_01 epoch 10
+- LoRA scale and mode: 0.3, merged once at startup
+- speaker and public voice: `female01`
+- seed: 20260812
+- maximum new tokens: 4,096
+- base-model tree SHA-256:
+  `5f23af615c110b726001f37c96167488da2038045438906af65c21e9202b476e`
+- adapter tree SHA-256:
+  `e8d8ba780b17534dca2efc3cc276ce7bd629b69bdf89bd3ffdf6dd5db961c838`
+- allowlisted runtime-source SHA-256:
+  `10851e7462a6ea33894c2b561f440ab1ff664a54c1fd948822ac7bbed3e0a7fd`
+- startup receipt SHA-256:
+  `54090d24e5e0f1e7404a2c847b7687c97a22613cba92bd7a700e0055a4d583d0`
+
+The source checkout contained historical local changes and training outputs.
+The companion checkout was clean. The receipt therefore does not assert a
+clean Qwen checkout. It binds the imported `qwen_tts` package and LoRA helper
+content while excluding unrelated training outputs, model caches, Git state,
+and bytecode. The base model and adapter are content-addressed separately.
+
+The tool selected frozen row
+`qwen3-epoch10--cadence-two-minute--seed-20260812`. The live HTTP WAV was a
+valid 54.72-second, mono 24 kHz PCM file with SHA-256:
+
+`1dfb118eb40684cfdeeaa2ae740387517901cf17411f2fec2090c490e28edd3d`
+
+That hash exactly matched the earlier CLI observation and a complete server
+restart. The first HTTP run took 36.594920 seconds and peaked at 5,024,205,824
+allocated CUDA bytes. Runtime and audio quality comparisons should not be made
+from this single warm observation.
+
+- HTTP observation SHA-256:
+  `90d795077de8c717217779c431c5901c188dbf6f40cbecd80f620f4243b6f3b5`
+- parity report SHA-256:
+  `e393f3b060405dbc1a6e4efc1f9380bd5860575755b47cc747c3b2ade1d3c954`
+- LoRA contract-probe report SHA-256:
+  `5026720270b207f82b220dcb6d476eb119797d00b6f0ffa2decf29ef7d489765`
+
+The adapter probe repeated wrong-model, request-controlled path,
+unsupported-format, oversized-instruction, and overlapping-generation cases.
+All passed. The primary overlap produced a valid WAV while the competing
+request returned HTTP 429 `server_busy`.
+
+This qualifies one merged-adapter HTTP row under one seed, prompt, scale, host,
+and dependency stack. It does not qualify the unmerged adapter route, other
+adapter epochs or scales, multiple seeds, perceptual quality, or production
+behavior.
+
+## Failures that improved the implementation
 
 The first real server started with public voice `speaker`, returned ready, and
 then failed generation because the loaded full-SFT checkpoint registered only
@@ -157,6 +219,15 @@ startup instead of producing a false ready state. Revision
 `ff0af6d811173ae975bed2fd2e9b04942575c7b5` includes that fix and its
 dependency-free test.
 
+The first LoRA attempt paired the 1.7B adapter with the 0.6B base. PEFT rejected
+the mismatched tensor dimensions, but only after the base model had loaded on
+the GPU. The server now reads bounded safetensors header metadata and compares
+selected talker dimensions with the chosen base configuration before importing
+model dependencies. A mismatched adapter now fails before expensive model
+loading. Startup receipt source hashing was also narrowed from the entire Qwen
+checkout to imported runtime code after the historical workspace exposed how a
+broad tree would include unrelated models and adapters.
+
 ## Retained evidence
 
 The retained evidence root is:
@@ -165,6 +236,6 @@ The retained evidence root is:
 
 Important files include the two successful startup receipts, neutral HTTP and
 CLI WAV files, post-restart WAV, instruction WAV, overlap WAV, response-header
-records, OOD probe reports, frozen-plan HTTP observation, exact parity report,
-and restart comparison. Failed receipts and the initial false-readiness attempt
-were preserved instead of overwritten.
+records, OOD probe reports, frozen-plan HTTP observations, exact parity reports,
+LoRA restart output, and restart comparison. Failed attempts and the initial
+false-readiness evidence were preserved instead of overwritten.

@@ -278,15 +278,18 @@ destinations. The process validates the registered voice before readiness,
 serializes mutable model generation, rejects overlap with HTTP 429, and writes
 only bounded server-owned temporary WAV files.
 
-The fixed-artifact startup receipt hashes the runtime source, inference model,
-optional adapter, and generation controls without retaining local paths. The
-live qualification tools bind a frozen plan row to the HTTP result, compare it
-with the matching CLI row, and probe malformed plus overlapping requests.
+The fixed-artifact startup receipt hashes allowlisted imported runtime source,
+the inference model, optional adapter, and generation controls without
+retaining local paths. It excludes unrelated training outputs and cache state.
+The live qualification tools bind a frozen plan row to the HTTP result, compare
+it with the matching CLI row, and probe malformed plus overlapping requests.
 
 The first full-SFT CUDA drill produced a valid instruction-bearing row, matched
 the neutral CLI WAV byte-for-byte, and reproduced the receipt plus WAV after a
-complete restart. That is one fixed-artifact compatibility result, not a LoRA,
-quality, load, gateway, or production claim. See
+complete restart. A separate 1.7B epoch-10 LoRA drill matched its frozen
+long-form CLI WAV byte-for-byte, reproduced it after restart, and passed the
+same bounded request probes. These are narrow fixed-artifact compatibility
+results, not quality, load, gateway, or production claims. See
 [`docs/openai-compatible-serving.md`](docs/openai-compatible-serving.md) and
 [`reports/openai-speech-http-runtime-2026-08-14.md`](reports/openai-speech-http-runtime-2026-08-14.md).
 
