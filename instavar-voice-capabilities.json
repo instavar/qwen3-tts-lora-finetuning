@@ -70,10 +70,10 @@
           "boundary": "Valid audio does not establish identity, accent, cadence, or naturalness."
         },
         "evaluation": {
-          "status": "smoke_tested",
+          "status": "validated",
           "evidence": [
             {
-              "level": "smoke_tested",
+              "level": "validated",
               "ref": "reports/runtime-smoke-2026-08-12.md",
               "claim": "Runtime coverage and bounded objective checks were recorded."
             },
@@ -199,7 +199,7 @@
       "precision": "bfloat16",
       "batching": false,
       "conformance": {
-        "status": "smoke_tested",
+        "status": "validated",
         "clean_checkout": true,
         "fresh_process": true,
         "prompt_count": 1,
@@ -208,9 +208,9 @@
       },
       "evidence": [
         {
-          "level": "repository_declared",
-          "ref": "README.md#frozen-multi-prompt-evaluation",
-          "claim": "The Base control uses the upstream ICL voice-clone API with an explicit reference recording and transcript."
+          "level": "validated",
+          "ref": "reports/matched-long-form-base-adapter-2026-08-13.md",
+          "claim": "The upstream Base ICL voice-clone path generated the frozen long-form row in a clean fresh process."
         }
       ],
       "notes": "One clean-checkout GPU long-form prompt passed. Instruction-bearing rows fail closed because the Base voice-clone API does not implement CustomVoice instructions."
@@ -226,20 +226,21 @@
       "precision": "bfloat16",
       "batching": false,
       "conformance": {
-        "status": "smoke_tested",
-        "clean_checkout": false,
+        "status": "validated",
+        "clean_checkout": true,
         "fresh_process": true,
-        "prompt_count": 7,
-        "seed_count": 3,
-        "report": "reports/runtime-smoke-2026-08-12.md"
+        "prompt_count": 1,
+        "seed_count": 1,
+        "report": "reports/matched-long-form-base-adapter-2026-08-13.md"
       },
       "evidence": [
         {
           "level": "validated",
-          "ref": "README.md#inference",
-          "claim": "The pinned companion path loads a LoRA adapter with explicit scale control and generates audio."
+          "ref": "reports/matched-long-form-base-adapter-2026-08-13.md",
+          "claim": "The epoch-10 LoRA CustomVoice path generated the matched long-form row in a clean fresh process."
         }
-      ]
+      ],
+      "notes": "A separate historical seven-prompt by three-seed LoRA suite also completed from a non-clean host checkout."
     },
     {
       "id": "pytorch_full_sft",
@@ -291,8 +292,8 @@
   "evaluation": {
     "prompt_pack": {
       "id": "instavar-singapore-english",
-      "version": "1.1.0",
-      "sha256": "97999765d5027f1d6b8a51d8e565c767285ef708922611b195d63d3e1184d66f"
+      "version": "1.2.0",
+      "sha256": "6d6750188abd6b8db83527158bf689ee138c65167a36ede17c62013bdc1279b1"
     },
     "objective_metrics": [
       "asr_word_error_rate",
@@ -317,10 +318,12 @@
       "listening_fatigue"
     ],
     "matched_comparison": {
-      "status": "blocked",
+      "status": "partial",
       "baseline_candidate": "qwen3-tts-base",
       "adapted_candidate": "qwen3-tts-epoch-10",
+      "report": "reports/matched-long-form-base-adapter-2026-08-13.md",
       "blockers": [
+        "Only one prompt, seed, reference, and LoRA checkpoint have a clean matched comparison, and the Base and LoRA conditioning APIs differ.",
         "Blind listening ratings are incomplete."
       ]
     }
