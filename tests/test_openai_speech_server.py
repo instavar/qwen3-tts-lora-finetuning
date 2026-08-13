@@ -4,6 +4,7 @@ import http.client
 import io
 import json
 import socket
+import struct
 import tempfile
 import threading
 import unittest
@@ -192,6 +193,15 @@ class SpeechRequestTests(unittest.TestCase):
 
 
 class StartupValidationTests(unittest.TestCase):
+    @staticmethod
+    def _write_adapter_header(path: Path, shapes: dict[str, list[int]]) -> None:
+        header = {
+            name: {"dtype": "BF16", "shape": shape, "data_offsets": [0, 0]}
+            for name, shape in shapes.items()
+        }
+        payload = json.dumps(header, separators=(",", ":")).encode()
+        path.write_bytes(struct.pack("<Q", len(payload)) + payload)
+
     def test_public_ids_and_numeric_limits_fail_closed(self) -> None:
         for value in ("", " leading", "line\nbreak", "x" * 129):
             with self.subTest(value=repr(value)), self.assertRaisesRegex(ValueError, "public identifier"):
@@ -280,6 +290,29 @@ class StartupValidationTests(unittest.TestCase):
             helper.unlink()
             with self.assertRaisesRegex(ValueError, "runtime source is missing"):
                 server.hash_qwen_runtime_source(qwen, mode="adapter")
+
+    def test_adapter_base_architecture_mismatch_fails_before_model_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / "base"
+            adapter = root / "adapter"
+            base.mkdir()
+            adapter.mkdir()
+            (base / "config.json").write_text(
+                json.dumps(
+                    {
+                        "tts_model_type": "base",
+                        "talker_config": {"hidden_size": 1024, "intermediate_size": 3072},
+                    }
+                )
+            )
+            weights = adapter / "adapter_model.safetensors"
+            probe = "base_model.model.talker.model.layers.0.mlp.gate_proj.lora_A.weight"
+            self._write_adapter_header(weights, {probe: [16, 2048]})
+            with self.assertRaisesRegex(ValueError, "incompatible with the selected base model"):
+                server.validate_adapter_base_compatibility(base, adapter)
+            self._write_adapter_header(weights, {probe: [16, 1024]})
+            server.validate_adapter_base_compatibility(base, adapter)
 
     def test_startup_receipt_binds_mode_trees_and_controls_without_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
