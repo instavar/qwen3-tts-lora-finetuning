@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import math
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -247,6 +248,20 @@ def _save_pretrained_with_compatible_config(
     )
 
 
+def _copy_speech_tokenizer(source: Path, target: Path) -> dict:
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError(f"speech tokenizer source is missing or unsafe: {source}")
+    for path in sorted(source.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"speech tokenizer source contains a symlink: {path}")
+        if not path.is_dir() and not path.is_file():
+            raise ValueError(
+                f"speech tokenizer source contains an unsupported entry: {path}"
+            )
+    shutil.copytree(source, target)
+    return _tree_manifest(target)
+
+
 def _resume_state(
     checkpoint: Path | None,
     expected_contract: dict,
@@ -425,6 +440,7 @@ def _save_checkpoint(
     training_observation: dict,
     resume_provenance: dict | None,
     source_config: dict,
+    speech_tokenizer_source: Path,
     accelerator,
     torch,
 ) -> None:
@@ -465,6 +481,9 @@ def _save_checkpoint(
     output_dir.mkdir(parents=True, exist_ok=False)
     accelerator.save_state(output_dir / "resume-state", safe_serialization=True)
     resume_state_manifest = _tree_manifest(output_dir / "resume-state")
+    speech_tokenizer_manifest = _copy_speech_tokenizer(
+        speech_tokenizer_source, output_dir / "speech_tokenizer"
+    )
     _save_pretrained_with_compatible_config(
         core_model,
         output_dir,
@@ -485,6 +504,7 @@ def _save_checkpoint(
         "training_observation": training_observation,
         "resume_provenance": resume_provenance,
         "resume_state": resume_state_manifest,
+        "speech_tokenizer": speech_tokenizer_manifest,
         "distributed_processes": accelerator.num_processes,
         "evidence_boundary": (
             "The nested Accelerator state supports same-contract epoch-boundary "
@@ -591,6 +611,12 @@ def main() -> int:
     if config_source is None:
         raise FileNotFoundError("base model config.json could not be resolved")
     source_config = json.loads(Path(config_source).read_text(encoding="utf-8"))
+    speech_tokenizer_config = cached_file(
+        args.init_model_path, "speech_tokenizer/config.json"
+    )
+    if speech_tokenizer_config is None:
+        raise FileNotFoundError("base model speech_tokenizer/config.json is missing")
+    speech_tokenizer_source = Path(speech_tokenizer_config).parent
     config = AutoConfig.from_pretrained(args.init_model_path)
     train_dataset = TTSDataset(
         _load_rows(args.train_jsonl, args.train_row_limit), tts.processor, config
@@ -702,6 +728,7 @@ def main() -> int:
                 training_observation=training_observation,
                 resume_provenance=resume_provenance,
                 source_config=source_config,
+                speech_tokenizer_source=speech_tokenizer_source,
                 accelerator=accelerator,
                 torch=torch,
             )

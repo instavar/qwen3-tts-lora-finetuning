@@ -580,6 +580,27 @@ class LifecycleBackendTests(unittest.TestCase):
         self.assertEqual(result["speaker_encoder_config"], {"hidden_size": 256})
         self.assertEqual(source["tts_model_type"], "base")
 
+    def test_full_sft_checkpoint_copies_content_bound_speech_tokenizer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "config.json").write_text('{"codec": "fixture"}\n')
+            (source / "model.safetensors").write_bytes(b"weights")
+            target = root / "checkpoint" / "speech_tokenizer"
+            manifest = FULL_TRAINER._copy_speech_tokenizer(source, target)
+            self.assertEqual(
+                (target / "model.safetensors").read_bytes(), b"weights"
+            )
+            self.assertEqual(manifest, FULL_TRAINER._tree_manifest(target))
+            unsafe = root / "unsafe"
+            unsafe.mkdir()
+            (unsafe / "linked.json").symlink_to(source / "config.json")
+            with self.assertRaisesRegex(ValueError, "contains a symlink"):
+                FULL_TRAINER._copy_speech_tokenizer(
+                    unsafe, root / "unsafe-checkpoint"
+                )
+
     def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             experiment = Path(temporary) / "experiment.json"
