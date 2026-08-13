@@ -392,10 +392,20 @@ def build_startup_receipt(
             "qwen_source": hash_directory_tree(
                 qwen_dir,
                 excluded_directory_names=frozenset(
-                    {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
+                    {
+                        ".DS_Store",
+                        ".git",
+                        ".mypy_cache",
+                        ".pytest_cache",
+                        ".ruff_cache",
+                        "__pycache__",
+                    }
                 ),
             ),
-            "primary_model": hash_directory_tree(primary_model),
+            "primary_model": hash_directory_tree(
+                primary_model,
+                excluded_directory_names=frozenset({"resume-state"}),
+            ),
             **({"adapter": hash_directory_tree(adapter)} if adapter is not None else {}),
         },
         "boundary": (

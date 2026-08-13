@@ -278,6 +278,43 @@ class StartupValidationTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 server.write_startup_receipt(output, receipt)
 
+    def test_startup_receipt_excludes_optimizer_resume_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            qwen = root / "qwen"
+            model = root / "model"
+            qwen.mkdir()
+            model.mkdir()
+            (qwen / "source.py").write_text("value = 1\n")
+            (model / "config.json").write_text('{"tts_model_type":"custom_voice"}\n')
+            (model / "resume-state").mkdir()
+            (model / "resume-state" / "optimizer.bin").write_bytes(b"first")
+
+            def build() -> dict:
+                return server.build_startup_receipt(
+                    mode="full-sft",
+                    qwen_dir=qwen,
+                    primary_model=model,
+                    adapter=None,
+                    model_id="fixed-model",
+                    voice_id="fixed-voice",
+                    speaker_name="speaker",
+                    device="cuda:0",
+                    dtype="bf16",
+                    attention="flash_attention_2",
+                    language="auto",
+                    lora_scale=0.3,
+                    merge_lora=True,
+                    seed=42,
+                    max_new_tokens=4096,
+                    artifact_set_id=None,
+                    artifact_set_sha256=None,
+                )
+
+            first = build()["artifacts"]["primary_model"]
+            (model / "resume-state" / "optimizer.bin").write_bytes(b"second")
+            self.assertEqual(first, build()["artifacts"]["primary_model"])
+
     def test_startup_receipt_rejects_partial_artifact_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
