@@ -202,19 +202,25 @@ def _runtime_contract(
     }
 
 
-def _without_runtime_dtype_fields(value):
-    if isinstance(value, dict):
-        return {
-            key: _without_runtime_dtype_fields(item)
-            for key, item in value.items()
-            if key != "dtype"
-        }
-    if isinstance(value, list):
-        return [_without_runtime_dtype_fields(item) for item in value]
-    return value
+def _checkpoint_config(source_config: dict, current_config) -> dict:
+    result = json.loads(json.dumps(source_config))
+    result["tts_model_type"] = "custom_voice"
+    source_talker = result.get("talker_config")
+    if not isinstance(source_talker, dict):
+        raise ValueError("source config is missing talker_config")
+    source_talker["spk_id"] = dict(current_config.talker_config.spk_id)
+    source_talker["spk_is_dialect"] = dict(
+        current_config.talker_config.spk_is_dialect
+    )
+    return result
 
 
-def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict) -> None:
+def _save_pretrained_with_compatible_config(
+    model,
+    output_dir: Path,
+    state_dict: dict,
+    checkpoint_config: dict,
+) -> None:
     """Work around Transformers 4.57 nested Qwen config diff serialization."""
     config = model.config
     try:
@@ -224,9 +230,7 @@ def _save_pretrained_with_full_config(model, output_dir: Path, state_dict: dict)
             raise
         config_type = type(config)
         original_to_diff_dict = config_type.to_diff_dict
-        config_type.to_diff_dict = lambda self: _without_runtime_dtype_fields(
-            self.to_dict()
-        )
+        config_type.to_diff_dict = lambda self: checkpoint_config
         try:
             model.save_pretrained(
                 output_dir,
@@ -420,6 +424,7 @@ def _save_checkpoint(
     runtime_contract: dict,
     training_observation: dict,
     resume_provenance: dict | None,
+    source_config: dict,
     accelerator,
     torch,
 ) -> None:
@@ -460,7 +465,12 @@ def _save_checkpoint(
     output_dir.mkdir(parents=True, exist_ok=False)
     accelerator.save_state(output_dir / "resume-state", safe_serialization=True)
     resume_state_manifest = _tree_manifest(output_dir / "resume-state")
-    _save_pretrained_with_full_config(core_model, output_dir, state_dict)
+    _save_pretrained_with_compatible_config(
+        core_model,
+        output_dir,
+        state_dict,
+        _checkpoint_config(source_config, core_model.config),
+    )
     processor.save_pretrained(output_dir)
     metadata = {
         "schema_version": "1.2.0",
@@ -528,6 +538,7 @@ def main() -> int:
     from torch.optim import AdamW
     from torch.utils.data import DataLoader
     from transformers import AutoConfig
+    from transformers.utils import cached_file
 
     runtime_contract = _runtime_contract(
         torch=torch,
@@ -576,6 +587,10 @@ def main() -> int:
         torch_dtype=dtype_map[args.mixed_precision],
         attn_implementation=args.attention,
     )
+    config_source = cached_file(args.init_model_path, "config.json")
+    if config_source is None:
+        raise FileNotFoundError("base model config.json could not be resolved")
+    source_config = json.loads(Path(config_source).read_text(encoding="utf-8"))
     config = AutoConfig.from_pretrained(args.init_model_path)
     train_dataset = TTSDataset(
         _load_rows(args.train_jsonl, args.train_row_limit), tts.processor, config
@@ -686,6 +701,7 @@ def main() -> int:
                 runtime_contract=runtime_contract,
                 training_observation=training_observation,
                 resume_provenance=resume_provenance,
+                source_config=source_config,
                 accelerator=accelerator,
                 torch=torch,
             )

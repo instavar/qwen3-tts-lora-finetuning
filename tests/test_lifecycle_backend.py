@@ -521,23 +521,13 @@ class LifecycleBackendTests(unittest.TestCase):
                 after["init_model_artifact"]["manifest"]["sha256"],
             )
 
-    def test_full_sft_checkpoint_uses_full_config_only_for_known_dtype_bug(self) -> None:
+    def test_full_sft_checkpoint_uses_source_compatible_config_for_dtype_bug(self) -> None:
         class Config:
             def __init__(self, key: str) -> None:
                 self.key = key
 
             def to_diff_dict(self) -> dict:
                 raise KeyError(self.key)
-
-            def to_dict(self) -> dict:
-                return {
-                    "dtype": "bfloat16",
-                    "model_type": "qwen3_tts",
-                    "talker_config": {
-                        "dtype": "bfloat16",
-                        "hidden_size": 1024,
-                    },
-                }
 
         class Model:
             def __init__(self, key: str) -> None:
@@ -548,18 +538,47 @@ class LifecycleBackendTests(unittest.TestCase):
                 self.saved = (output_dir, self.config.to_diff_dict(), kwargs)
 
         model = Model("dtype")
-        FULL_TRAINER._save_pretrained_with_full_config(
-            model, Path("checkpoint"), {"weight": "fixture"}
+        compatible = {
+            "model_type": "qwen3_tts",
+            "talker_config": {"hidden_size": 1024},
+        }
+        FULL_TRAINER._save_pretrained_with_compatible_config(
+            model,
+            Path("checkpoint"),
+            {"weight": "fixture"},
+            compatible,
         )
-        self.assertNotIn("dtype", model.saved[1])
-        self.assertNotIn("dtype", model.saved[1]["talker_config"])
+        self.assertEqual(model.saved[1]["model_type"], "qwen3_tts")
         self.assertEqual(model.saved[1]["talker_config"]["hidden_size"], 1024)
         with self.assertRaisesRegex(KeyError, "dtype"):
             model.config.to_diff_dict()
         with self.assertRaisesRegex(KeyError, "unexpected"):
-            FULL_TRAINER._save_pretrained_with_full_config(
-                Model("unexpected"), Path("checkpoint"), {}
+            FULL_TRAINER._save_pretrained_with_compatible_config(
+                Model("unexpected"), Path("checkpoint"), {}, compatible
             )
+
+    def test_full_sft_checkpoint_config_changes_only_voice_registration(self) -> None:
+        source = {
+            "model_type": "qwen3_tts",
+            "tts_model_type": "base",
+            "speaker_encoder_config": {"hidden_size": 256},
+            "talker_config": {
+                "hidden_size": 1024,
+                "spk_id": {},
+                "spk_is_dialect": {},
+            },
+        }
+        current = argparse.Namespace(
+            talker_config=argparse.Namespace(
+                spk_id={"female01": 3000},
+                spk_is_dialect={"female01": False},
+            )
+        )
+        result = FULL_TRAINER._checkpoint_config(source, current)
+        self.assertEqual(result["tts_model_type"], "custom_voice")
+        self.assertEqual(result["talker_config"]["spk_id"], {"female01": 3000})
+        self.assertEqual(result["speaker_encoder_config"], {"hidden_size": 256})
+        self.assertEqual(source["tts_model_type"], "base")
 
     def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
