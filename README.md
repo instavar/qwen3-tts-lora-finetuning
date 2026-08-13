@@ -200,11 +200,16 @@ The full-SFT trainer:
 - writes the canonical speaker row into a copied checkpoint state dict, leaving
   the live model unchanged when training continues to another epoch;
 - saves the model and processor together for fresh-process reload;
+- copies and content-addresses the speech tokenizer required by fresh reload;
 - saves a nested Accelerate state for trusted, same-contract, single-process
   resume at the next epoch boundary, including model, optimizer, scaler, and RNG
   state;
 - hashes the train and validation manifests plus all training controls into the
   resume contract, content-addresses every resume-state file, and rejects drift;
+- content-addresses every regular file in a local base-model directory and
+  records per-epoch loss, validation loss, elapsed time, and peak CUDA memory;
+- supports explicit `TRAIN_ROW_LIMIT` and `VALIDATION_ROW_LIMIT` bounds for
+  qualification runs without changing or partially copying the source manifests;
 - rejects multi-process execution until distributed save and reload behavior
   has reproduced evidence.
 
@@ -225,12 +230,16 @@ python /path/to/instavar-voice-evaluation/main.py \
   --work-dir /path/to/new-empty-work-dir
 ```
 
-This path is `experimental`, not validated. CI checks schemas and
-dependency-free wrapper behavior only. A real GPU run must still demonstrate
-training, full checkpoint save, fresh reload, all frozen generation rows, and
-matched human evaluation. Plan substantial free disk space: stage isolation
-keeps the selected checkpoint archive, fresh reloads, evaluation evidence, and
-the final research package as separate provenance surfaces.
+This path remains `experimental`. The
+[bounded RTX 3090 Ti qualification](reports/full-sft-bounded-gpu-2026-08-14.md)
+records one optimization step, an interrupted epoch-boundary resume for one
+more step, a fresh-process reload, and ten frozen generation rows with complete
+objective metric coverage. Two pronunciation rows failed the preregistered
+content gate, and no blind listening was performed. This is execution evidence,
+not convergence, quality, full-corpus, package-retention, or production evidence.
+Plan substantial free disk space: each retained 0.6B checkpoint used about 7.4
+GB because the inference model, speech tokenizer, optimizer, and RNG state are
+kept together until packaging separates resume state from inference artifacts.
 The recorded RNG seed improves reproducibility but does not promise
 bit-identical CUDA kernels or outputs across hardware and dependency versions.
 
@@ -374,7 +383,7 @@ This repo provides the **LoRA fine-tuning path** with production-validated pitfa
 | Approach | Repo | Best for |
 |----------|------|----------|
 | **LoRA fine-tuning** (this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Fast iteration, adapter-based voice adaptation, production deployment with scale control |
-| **Full SFT** (experimental lifecycle in this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Full-weight adaptation with the known trainer fixes, strict provenance, fresh reload, and frozen evaluation. No real GPU run is recorded yet |
+| **Full SFT** (experimental lifecycle in this repo) | [instavar/qwen3-tts-lora-finetuning](https://github.com/instavar/qwen3-tts-lora-finetuning) | Full-weight adaptation with the known trainer fixes, strict provenance, fresh reload, and frozen evaluation. One bounded two-step GPU resume and ten-row generation smoke is recorded; convergence, quality, full-corpus, and retained-package evidence remain open |
 | **Full SFT** (official trainer) | [QwenLM/Qwen3-TTS/finetuning](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) | Upstream reference implementation. Recheck pitfalls #1 and #2 against the exact revision before use |
 | **Full SFT + WebUI** | [mozi1924/Qwen3-TTS-EasyFinetuning](https://github.com/mozi1924/Qwen3-TTS-EasyFinetuning) | Automated preprocessing + Gradio interface. Good for users who want a GUI workflow. Does not include LoRA support or the upstream bug fixes |
 | **ComfyUI integration** | [DarioFT/ComfyUI-Qwen3-TTS](https://github.com/DarioFT/ComfyUI-Qwen3-TTS) | Fine-tuning and inference within ComfyUI node workflows |

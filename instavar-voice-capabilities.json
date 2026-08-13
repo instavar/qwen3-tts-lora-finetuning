@@ -125,53 +125,79 @@
           "boundary": "The wrapper tests are dependency-free and do not constitute a real corpus audit."
         },
         "training": {
-          "status": "repository_declared",
+          "status": "smoke_tested",
           "evidence": [
             {
               "level": "repository_declared",
               "ref": "scripts/train_full_sft.py",
               "claim": "The trainer applies the known text-projection and label-alignment fixes to full-weight optimization."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+              "claim": "A clean RTX 3090 Ti run completed one finite full-SFT step and one finite resumed step with per-epoch validation and peak-memory evidence."
             }
           ],
-          "boundary": "No real full-SFT GPU run has been recorded, and multi-process training fails closed."
+          "boundary": "The run used one training row and one validation row for two optimization steps. It does not establish convergence, full-corpus behavior, quality, or multi-process training."
         },
         "checkpoint_save": {
-          "status": "repository_declared",
+          "status": "smoke_tested",
           "evidence": [
             {
               "level": "repository_declared",
               "ref": "scripts/train_full_sft.py",
               "claim": "The trainer writes a reloadable inference checkpoint plus a content-verified Accelerate state for trusted same-contract epoch-boundary resume."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+              "claim": "The first checkpoint resumed from content-verified optimizer and RNG state, and the resumed checkpoint preserved a loadable custom-voice config plus its speech tokenizer."
             }
           ],
-          "boundary": "Checkpoint and resume creation have only dependency-free contract coverage; no interrupted GPU run has been resumed."
+          "boundary": "Only a same-host, same-version, single-process epoch-boundary resume was tested. Mid-epoch, cross-version, distributed, and untrusted resume remain unsupported."
         },
         "fresh_process_reload": {
-          "status": "repository_declared",
+          "status": "smoke_tested",
           "evidence": [
             {
               "level": "repository_declared",
               "ref": "scripts/run_full_sft_infer.py",
               "claim": "The lifecycle extracts the selected full model and reloads it in a separate process."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+              "claim": "A separate CUDA process loaded the resumed checkpoint and generated a valid 24 kHz WAV."
             }
           ],
-          "boundary": "A real model reload has not been executed in this revision."
+          "boundary": "The custom-voice reload intentionally ignores the unchanged speaker encoder used only to derive the registered speaker row. Alternative versions and runtimes remain untested."
         },
         "held_out_inference": {
-          "status": "not_recorded",
-          "evidence": [],
-          "boundary": "No held-out full-SFT observation matrix exists."
+          "status": "smoke_tested",
+          "evidence": [
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+              "claim": "The resumed checkpoint generated all ten frozen text rows across four categories and three seeds."
+            }
+          ],
+          "boundary": "The matrix tests unseen generation text, not a full held-out corpus loss pass, and the checkpoint had only two optimization steps."
         },
         "evaluation": {
-          "status": "repository_declared",
+          "status": "smoke_tested",
           "evidence": [
             {
               "level": "repository_declared",
               "ref": "scripts/run_evaluation_suite.py",
               "claim": "The frozen-plan runner accepts either a LoRA adapter or a full-model checkpoint without loading both."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+              "claim": "All ten rows received content-bound runtime, audio, prosody, ASR, and speaker evidence with complete required metric coverage."
             }
           ],
-          "boundary": "No objective or human result exists for a full-SFT checkpoint."
+          "boundary": "Two names-and-numbers rows failed the content gate, the reference transcript was ASR-derived, and no blind human ratings exist."
         },
         "packaging": {
           "status": "repository_declared",
@@ -253,20 +279,26 @@
       "precision": "bfloat16",
       "batching": false,
       "conformance": {
-        "status": "not_run",
+        "status": "smoke_tested",
         "clean_checkout": true,
-        "fresh_process": false,
-        "prompt_count": 0,
-        "seed_count": 0
+        "fresh_process": true,
+        "prompt_count": 4,
+        "seed_count": 3,
+        "report": "reports/full-sft-bounded-gpu-2026-08-14.md"
       },
       "evidence": [
         {
           "level": "repository_declared",
           "ref": "instavar-voice-backend-full-sft.json",
           "claim": "A full-model PyTorch lifecycle is declared separately from the validated LoRA runtime."
+        },
+        {
+          "level": "smoke_tested",
+          "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
+          "claim": "One clean single-GPU bounded train, resume, reload, and ten-row objective evaluation completed on the 0.6B Base checkpoint."
         }
       ],
-      "notes": "Single-process only until real multi-process checkpoint and reload evidence exists."
+      "notes": "Single-process only. The smoke establishes bounded compatibility, not convergence, perceptual quality, full lifecycle packaging, or production readiness."
     },
     {
       "id": "openai_compatible_http",
@@ -336,9 +368,9 @@
   },
   "known_gaps": [
     "Revalidate the patch against current official Qwen3-TTS fine-tuning before claiming incremental necessity.",
-    "The full-SFT path has dependency-free contract coverage but no recorded GPU training, checkpoint reload, or held-out generation.",
+    "The full-SFT path has one bounded two-step GPU train and resume, fresh reload, and ten-row generation smoke; full-corpus training, convergence, and quality remain unrecorded.",
     "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
-    "Full SFT epoch-boundary resume has dependency-free contract coverage but no recorded interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
+    "Full SFT epoch-boundary resume has one same-host, same-version interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
     "No alternative runtime has passed adapter-aware conformance.",
     "The Base ICL versus epoch-10 comparison covers one long-form prompt, seed, and reference; multi-reference, multi-seed, and human ratings remain incomplete."
