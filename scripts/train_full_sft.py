@@ -11,6 +11,7 @@ training has its own reproduced checkpoint and reload evidence.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -39,6 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save-every", type=int, default=1)
     parser.add_argument("--eval-every", type=int, default=1)
+    parser.add_argument("--resume-from-checkpoint", type=Path)
+    parser.add_argument("--trust-resume-state", action="store_true")
     return parser.parse_args()
 
 
@@ -73,6 +76,154 @@ def _load_rows(path: Path) -> list[dict]:
     if not rows:
         raise ValueError(f"manifest contains no rows: {path}")
     return rows
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _tree_manifest(root: Path) -> dict:
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(f"resume-state root is missing or unsafe: {root}")
+    files: list[dict] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"resume-state tree contains a symlink: {path}")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"resume-state tree contains an unsupported entry: {path}")
+        files.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "sha256": _sha256(path),
+                "bytes": path.stat().st_size,
+            }
+        )
+    if not files:
+        raise ValueError("resume-state tree contains no files")
+    encoded = json.dumps(
+        files, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode()
+    return {
+        "schema_version": "1.0.0",
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "files": files,
+    }
+
+
+def _training_contract(args: argparse.Namespace) -> dict:
+    train_jsonl = args.train_jsonl.resolve()
+    val_jsonl = args.val_jsonl.resolve() if args.val_jsonl else None
+    qwen_dir = args.qwen_dir.resolve()
+    dataset_source = qwen_dir / "finetuning" / "dataset.py"
+    model_loader_source = qwen_dir / "qwen_tts" / "inference" / "qwen3_tts_model.py"
+    return {
+        "schema_version": "1.0.0",
+        "trainer_sha256": _sha256(Path(__file__).resolve()),
+        "qwen_sources": {
+            "dataset_py_sha256": _sha256(dataset_source),
+            "model_loader_py_sha256": _sha256(model_loader_source),
+        },
+        "init_model_path": str(args.init_model_path),
+        "train_jsonl": {"path": str(train_jsonl), "sha256": _sha256(train_jsonl)},
+        "val_jsonl": (
+            {"path": str(val_jsonl), "sha256": _sha256(val_jsonl)}
+            if val_jsonl is not None
+            else None
+        ),
+        "batch_size": args.batch_size,
+        "eval_batch_size": args.eval_batch_size,
+        "learning_rate": args.learning_rate,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "mixed_precision": args.mixed_precision,
+        "attention": args.attention,
+        "speaker_name": args.speaker_name,
+        "speaker_id": args.speaker_id,
+        "speaker_reference_index": args.speaker_reference_index,
+        "seed": args.seed,
+        "save_every": args.save_every,
+        "eval_every": args.eval_every,
+    }
+
+
+def _runtime_contract(
+    *, torch, accelerate_version: str, transformers_version: str
+) -> dict:
+    return {
+        "schema_version": "1.0.0",
+        "python": ".".join(str(value) for value in sys.version_info[:3]),
+        "torch": str(torch.__version__),
+        "torch_cuda": str(torch.version.cuda)
+        if torch.version.cuda is not None
+        else None,
+        "accelerate": accelerate_version,
+        "transformers": transformers_version,
+    }
+
+
+def _resume_state(
+    checkpoint: Path | None,
+    expected_contract: dict,
+    *,
+    num_epochs: int,
+    trust_resume_state: bool,
+    expected_runtime_contract: dict | None = None,
+) -> tuple[int, Path | None]:
+    if checkpoint is None:
+        return 0, None
+    if not trust_resume_state:
+        raise ValueError(
+            "resume requires --trust-resume-state because optimizer state may use "
+            "PyTorch serialization"
+        )
+    unresolved = checkpoint.expanduser()
+    if unresolved.is_symlink():
+        raise ValueError(f"resume checkpoint must not be a symlink: {unresolved}")
+    resolved = unresolved.resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"resume checkpoint is missing: {resolved}")
+    metadata_path = resolved / "instavar-full-sft-metadata.json"
+    if metadata_path.is_symlink() or not metadata_path.is_file():
+        raise FileNotFoundError(
+            f"resume metadata is missing or unsafe: {metadata_path}"
+        )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("schema_version") != "1.1.0":
+        raise ValueError("resume checkpoint requires metadata schema 1.1.0")
+    if metadata.get("adaptation_mode") != "full_sft":
+        raise ValueError("resume checkpoint adaptation_mode must equal full_sft")
+    if metadata.get("training_contract") != expected_contract:
+        raise ValueError("resume checkpoint training contract does not match this run")
+    if (
+        expected_runtime_contract is not None
+        and metadata.get("runtime_contract") != expected_runtime_contract
+    ):
+        raise ValueError(
+            "resume checkpoint runtime contract does not match this environment"
+        )
+    completed_epochs = metadata.get("completed_epochs")
+    if (
+        not isinstance(completed_epochs, int)
+        or isinstance(completed_epochs, bool)
+        or completed_epochs < 1
+    ):
+        raise ValueError(
+            "resume checkpoint completed_epochs must be a positive integer"
+        )
+    if completed_epochs >= num_epochs:
+        raise ValueError(
+            "num epochs must exceed the resume checkpoint's completed epochs"
+        )
+    state_dir = resolved / "resume-state"
+    actual_state = _tree_manifest(state_dir)
+    if metadata.get("resume_state") != actual_state:
+        raise ValueError("resume-state content does not match checkpoint metadata")
+    return completed_epochs, state_dir
 
 
 def _compute_loss(model, batch, torch):
@@ -187,6 +338,9 @@ def _save_checkpoint(
     speaker_embedding,
     speaker_reference_index: int,
     training_seed: int,
+    completed_epochs: int,
+    training_contract: dict,
+    runtime_contract: dict,
     accelerator,
     torch,
 ) -> None:
@@ -225,6 +379,8 @@ def _save_checkpoint(
     talker_config.spk_is_dialect[speaker_name] = False
 
     output_dir.mkdir(parents=True, exist_ok=False)
+    accelerator.save_state(output_dir / "resume-state", safe_serialization=True)
+    resume_state_manifest = _tree_manifest(output_dir / "resume-state")
     core_model.save_pretrained(
         output_dir,
         state_dict=state_dict,
@@ -232,16 +388,21 @@ def _save_checkpoint(
     )
     processor.save_pretrained(output_dir)
     metadata = {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "adaptation_mode": "full_sft",
+        "completed_epochs": completed_epochs,
         "speaker_name": speaker_name,
         "speaker_id": speaker_id,
         "speaker_reference_index": speaker_reference_index,
         "training_seed": training_seed,
+        "training_contract": training_contract,
+        "runtime_contract": runtime_contract,
+        "resume_state": resume_state_manifest,
         "distributed_processes": accelerator.num_processes,
         "evidence_boundary": (
-            "Checkpoint creation does not prove perceptual quality or "
-            "distribution rights."
+            "The nested Accelerator state supports same-contract epoch-boundary "
+            "resume in one process. Checkpoint creation does not prove perceptual "
+            "quality, cross-version resume, or distribution rights."
         ),
     }
     (output_dir / "instavar-full-sft-metadata.json").write_text(
@@ -267,6 +428,7 @@ def main() -> int:
         _positive(args.eval_batch_size, "eval batch size")
     if not args.speaker_name.strip():
         raise ValueError("speaker name must be non-empty")
+    training_contract = _training_contract(args)
 
     qwen_dir = args.qwen_dir.resolve()
     finetuning_dir = qwen_dir / "finetuning"
@@ -277,7 +439,9 @@ def main() -> int:
     sys.path.insert(0, str(qwen_dir))
     sys.path.insert(0, str(finetuning_dir))
 
+    import accelerate
     import torch
+    import transformers
     from accelerate import Accelerator
     from accelerate.utils import set_seed
     from dataset import TTSDataset
@@ -285,6 +449,19 @@ def main() -> int:
     from torch.optim import AdamW
     from torch.utils.data import DataLoader
     from transformers import AutoConfig
+
+    runtime_contract = _runtime_contract(
+        torch=torch,
+        accelerate_version=accelerate.__version__,
+        transformers_version=transformers.__version__,
+    )
+    start_epoch, resume_state = _resume_state(
+        args.resume_from_checkpoint,
+        training_contract,
+        num_epochs=args.num_epochs,
+        trust_resume_state=args.trust_resume_state,
+        expected_runtime_contract=runtime_contract,
+    )
 
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -341,6 +518,8 @@ def main() -> int:
             train_loader,
             validation_loader,
         )
+    if resume_state is not None:
+        accelerator.load_state(resume_state)
     speaker_embedding = _canonical_speaker_embedding(
         model,
         train_dataset,
@@ -351,7 +530,7 @@ def main() -> int:
     )
 
     model.train()
-    for epoch in range(args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         for step, batch in enumerate(train_loader):
             with accelerator.accumulate(model):
                 loss = _compute_loss(model, batch, torch)
@@ -380,6 +559,9 @@ def main() -> int:
                 speaker_embedding=speaker_embedding,
                 speaker_reference_index=args.speaker_reference_index,
                 training_seed=args.seed,
+                completed_epochs=epoch + 1,
+                training_contract=training_contract,
+                runtime_contract=runtime_contract,
                 accelerator=accelerator,
                 torch=torch,
             )

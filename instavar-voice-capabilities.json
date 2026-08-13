@@ -125,10 +125,10 @@
             {
               "level": "repository_declared",
               "ref": "scripts/train_full_sft.py",
-              "claim": "The trainer writes a reloadable full-model checkpoint with processor files and explicit speaker metadata."
+              "claim": "The trainer writes a reloadable inference checkpoint plus a content-verified Accelerate state for trusted same-contract epoch-boundary resume."
             }
           ],
-          "boundary": "Checkpoint creation has only dependency-free contract coverage."
+          "boundary": "Checkpoint and resume creation have only dependency-free contract coverage; no interrupted GPU run has been resumed."
         },
         "fresh_process_reload": {
           "status": "repository_declared",
@@ -293,7 +293,7 @@
     "Revalidate the patch against current official Qwen3-TTS fine-tuning before claiming incremental necessity.",
     "The full-SFT path has dependency-free contract coverage but no recorded GPU training, checkpoint reload, or held-out generation.",
     "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
-    "Full SFT does not preserve optimizer state for exact interrupted-run resume.",
+    "Full SFT epoch-boundary resume has dependency-free contract coverage but no recorded interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
     "No alternative runtime has passed adapter-aware conformance.",
     "The 21-row frozen runtime suite has no human ratings or base-model comparison."
   ]

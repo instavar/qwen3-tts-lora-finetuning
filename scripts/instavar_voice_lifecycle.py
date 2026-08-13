@@ -77,11 +77,24 @@ def _check_archive_source(root: Path) -> None:
         raise ValueError(f"archive source contains no files: {root}")
 
 
-def _archive_directory(source: Path, destination: Path, *, arcname: str) -> None:
+def _archive_directory(
+    source: Path,
+    destination: Path,
+    *,
+    arcname: str,
+    exclude_top_level: frozenset[str] = frozenset(),
+) -> None:
     _check_archive_source(source)
     destination.parent.mkdir(parents=True, exist_ok=True)
+
+    def include(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        parts = Path(member.name).parts
+        if len(parts) > 1 and parts[0] == arcname and parts[1] in exclude_top_level:
+            return None
+        return member
+
     with tarfile.open(destination, "w") as archive:
-        archive.add(source, arcname=arcname, recursive=True)
+        archive.add(source, arcname=arcname, recursive=True, filter=include)
 
 
 def _extract_archive(source: Path, destination: Path, *, arcname: str = "adapter") -> Path:

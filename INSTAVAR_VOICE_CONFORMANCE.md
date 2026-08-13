@@ -7,10 +7,16 @@ The backend runs corpus audit, content-addressed dataset-lineage verification, t
 The full-SFT backend applies the same audit and evidence chain to a full model.
 Its companion-owned trainer keeps the known text-projection and label-alignment
 fixes separate from the LoRA patch, saves processor assets with the checkpoint,
-and fails closed when more than one process is requested. The full-SFT
+and saves a content-verified Accelerate state for trusted same-contract resume at
+the next epoch boundary. It rejects manifest, hyperparameter, speaker-control,
+state-content, and target-epoch drift, requires explicit trust acknowledgement,
+excludes optimizer-bearing state from inference packages, and fails closed when
+more than one process is requested. The full-SFT
 capability and `pytorch_full_sft` runtime remain `experimental` and `not_run`.
 Dependency-free tests prove routing and packaging behavior only. They do not
 prove that the model trains, reloads, fits GPU memory, or improves speech.
+They also do not establish real interrupted-run restoration, mid-epoch resume,
+or resume across dependency versions.
 
 Full-model lifecycle isolation can require several times the checkpoint size
 because training, archive, fresh reload, evaluation, and final packaging are

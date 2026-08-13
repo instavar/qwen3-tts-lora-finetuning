@@ -45,6 +45,10 @@ class EvaluationSuiteContractTests(unittest.TestCase):
         self.assertIn("state_dict[codec_weight_key] = weight", source)
         self.assertNotIn("core_model.talker.model.codec_embedding.weight", source)
         self.assertIn("processor.save_pretrained(output_dir)", source)
+        self.assertIn("accelerator.save_state", source)
+        self.assertIn("accelerator.load_state", source)
+        self.assertIn("--trust-resume-state", source)
+        self.assertIn("range(start_epoch, args.num_epochs)", source)
         self.assertNotIn("from peft", source)
 
     def test_lifecycle_binds_runtime_attempt_evidence_before_archiving(self) -> None:

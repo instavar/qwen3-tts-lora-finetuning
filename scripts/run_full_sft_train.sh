@@ -27,6 +27,15 @@ args=(
   --save-every "${SAVE_EVERY:-1}"
   --eval-every "${EVAL_EVERY:-1}"
 )
+
+if [[ -n "${RESUME_FROM_CHECKPOINT:-}" ]]; then
+  if [[ "${TRUST_RESUME_STATE:-0}" != "1" ]]; then
+    echo "Set TRUST_RESUME_STATE=1 only for a trusted local checkpoint" >&2
+    exit 2
+  fi
+  args+=(--resume-from-checkpoint "${RESUME_FROM_CHECKPOINT}")
+  args+=(--trust-resume-state)
+fi
 if [[ -n "${VAL_JSONL}" ]]; then
   args+=(--val-jsonl "${VAL_JSONL}")
 fi

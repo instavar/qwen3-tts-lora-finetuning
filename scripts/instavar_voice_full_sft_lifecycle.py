@@ -156,7 +156,10 @@ def _train() -> None:
         environment_name="SELECTED_CHECKPOINT_NAME",
     )
     _archive_directory(
-        selected, work_dir / "train" / "selected-full-model.tar", arcname="model"
+        selected,
+        work_dir / "train" / "selected-full-model.tar",
+        arcname="model",
+        exclude_top_level=frozenset({"resume-state"}),
     )
 
 

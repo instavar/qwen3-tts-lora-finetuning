@@ -187,6 +187,11 @@ The full-SFT trainer:
 - writes the canonical speaker row into a copied checkpoint state dict, leaving
   the live model unchanged when training continues to another epoch;
 - saves the model and processor together for fresh-process reload;
+- saves a nested Accelerate state for trusted, same-contract, single-process
+  resume at the next epoch boundary, including model, optimizer, scaler, and RNG
+  state;
+- hashes the train and validation manifests plus all training controls into the
+  resume contract, content-addresses every resume-state file, and rejects drift;
 - rejects multi-process execution until distributed save and reload behavior
   has reproduced evidence.
 
@@ -215,9 +220,31 @@ keeps the selected checkpoint archive, fresh reloads, evaluation evidence, and
 the final research package as separate provenance surfaces.
 The recorded RNG seed improves reproducibility but does not promise
 bit-identical CUDA kernels or outputs across hardware and dependency versions.
-The experimental trainer does not yet preserve optimizer state for interrupted
-run resume. Restarting from a saved model checkpoint is not equivalent to an
-exact optimizer-state continuation and must be recorded as a new experiment.
+
+Resume only from a checkpoint created by this trainer in a trusted local
+environment:
+
+```bash
+RESUME_FROM_CHECKPOINT=/path/to/checkpoint-epoch-0 \
+TRUST_RESUME_STATE=1 \
+EPOCHS=3 \
+bash scripts/run_full_sft_train.sh
+```
+
+`EPOCHS` is the total target, not the number of additional epochs. The trainer
+restores through Accelerate only after rebuilding the same model, optimizer, and
+dataloaders, and starts at `completed_epochs`. It rejects changed manifests,
+hyperparameters, speaker controls, symbolic state roots, modified state files,
+and already-complete targets. The explicit trust flag is required because
+optimizer state may use PyTorch serialization. Do not resume an untrusted or
+downloaded state directory. Resume is supported only between completed epochs
+in one process and the same dependency environment; mid-epoch, distributed,
+and cross-version equivalence remain unverified.
+
+The lifecycle excludes `resume-state` from the selected inference archive and
+research package. This avoids distributing optimizer-bearing state and prevents
+the full training snapshot from being mistaken for the reloadable inference
+artifact. Keep the original training output separately if resume is required.
 
 ### Frozen multi-prompt evaluation
 

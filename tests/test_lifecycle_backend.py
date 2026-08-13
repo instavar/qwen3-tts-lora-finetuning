@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -10,8 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from instavar_voice_lab.lineage import build_dataset_lineage
 from instavar_voice_lab.lifecycle import resolve_backend_spec
+from instavar_voice_lab.lineage import build_dataset_lineage
 
 
 ROOT = Path(__file__).parents[1]
@@ -112,6 +113,25 @@ class LifecycleBackendTests(unittest.TestCase):
             extracted = LIFECYCLE._extract_archive(archive, root / "reload", arcname="model")
             self.assertEqual((extracted / "model.safetensors").read_bytes(), b"weights")
 
+    def test_full_model_archive_excludes_optimizer_resume_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "model-source"
+            (model / "resume-state").mkdir(parents=True)
+            (model / "model.safetensors").write_bytes(b"weights")
+            (model / "resume-state" / "optimizer.bin").write_bytes(b"optimizer")
+            archive = root / "model.tar"
+            LIFECYCLE._archive_directory(
+                model,
+                archive,
+                arcname="model",
+                exclude_top_level=frozenset({"resume-state"}),
+            )
+            with tarfile.open(archive, "r") as handle:
+                names = handle.getnames()
+            self.assertIn("model/model.safetensors", names)
+            self.assertFalse(any(name.startswith("model/resume-state") for name in names))
+
     def test_archive_rejects_members_outside_declared_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -142,6 +162,172 @@ class LifecycleBackendTests(unittest.TestCase):
                 FULL_TRAINER._load_rows(manifest)
             manifest.write_text('{"audio": "one.wav", "text": "one"}\n')
             self.assertEqual(FULL_TRAINER._load_rows(manifest)[0]["text"], "one")
+
+    def test_full_sft_resume_binds_contract_state_and_epoch_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            train = root / "train.jsonl"
+            validation = root / "validation.jsonl"
+            qwen = root / "qwen"
+            (qwen / "finetuning").mkdir(parents=True)
+            (qwen / "qwen_tts" / "inference").mkdir(parents=True)
+            (qwen / "finetuning" / "dataset.py").write_text("# dataset\n")
+            (qwen / "qwen_tts" / "inference" / "qwen3_tts_model.py").write_text(
+                "# model loader\n"
+            )
+            train.write_text('{"audio": "train.wav", "text": "train"}\n')
+            validation.write_text('{"audio": "validation.wav", "text": "validation"}\n')
+            args = argparse.Namespace(
+                init_model_path="Qwen/Qwen3-TTS-fixture",
+                qwen_dir=qwen,
+                train_jsonl=train,
+                val_jsonl=validation,
+                batch_size=2,
+                eval_batch_size=1,
+                learning_rate=2e-6,
+                gradient_accumulation_steps=4,
+                mixed_precision="bf16",
+                attention="flash_attention_2",
+                speaker_name="fixture",
+                speaker_id=3000,
+                speaker_reference_index=0,
+                seed=42,
+                save_every=1,
+                eval_every=1,
+            )
+            contract = FULL_TRAINER._training_contract(args)
+            runtime = {
+                "schema_version": "1.0.0",
+                "python": "3.11.0",
+                "torch": "2.8.0",
+                "torch_cuda": "12.8",
+                "accelerate": "1.10.0",
+                "transformers": "4.57.0",
+            }
+            checkpoint = root / "checkpoint-epoch-0"
+            state = checkpoint / "resume-state"
+            state.mkdir(parents=True)
+            (state / "model.safetensors").write_bytes(b"model")
+            (state / "optimizer.bin").write_bytes(b"optimizer")
+            metadata = {
+                "schema_version": "1.1.0",
+                "adaptation_mode": "full_sft",
+                "completed_epochs": 1,
+                "training_contract": contract,
+                "runtime_contract": runtime,
+                "resume_state": FULL_TRAINER._tree_manifest(state),
+            }
+            (checkpoint / "instavar-full-sft-metadata.json").write_text(
+                json.dumps(metadata) + "\n"
+            )
+
+            with self.assertRaisesRegex(ValueError, "trust-resume-state"):
+                FULL_TRAINER._resume_state(
+                    checkpoint, contract, num_epochs=3, trust_resume_state=False
+                )
+            completed, state_path = FULL_TRAINER._resume_state(
+                checkpoint,
+                contract,
+                num_epochs=3,
+                trust_resume_state=True,
+                expected_runtime_contract=runtime,
+            )
+            self.assertEqual(completed, 1)
+            self.assertEqual(state_path, state.resolve())
+
+            (state / "optimizer.bin").write_bytes(b"tampered")
+            with self.assertRaisesRegex(
+                ValueError, "does not match checkpoint metadata"
+            ):
+                FULL_TRAINER._resume_state(
+                    checkpoint,
+                    contract,
+                    num_epochs=3,
+                    trust_resume_state=True,
+                    expected_runtime_contract=runtime,
+                )
+
+    def test_full_sft_resume_rejects_contract_drift_and_completed_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "checkpoint-epoch-0"
+            state = checkpoint / "resume-state"
+            state.mkdir(parents=True)
+            (state / "state.bin").write_bytes(b"state")
+            contract = {"schema_version": "1.0.0", "seed": 42}
+            runtime = {"schema_version": "1.0.0", "python": "3.11.0"}
+            metadata = {
+                "schema_version": "1.1.0",
+                "adaptation_mode": "full_sft",
+                "completed_epochs": 1,
+                "training_contract": contract,
+                "runtime_contract": runtime,
+                "resume_state": FULL_TRAINER._tree_manifest(state),
+            }
+            metadata_path = checkpoint / "instavar-full-sft-metadata.json"
+            metadata_path.write_text(json.dumps(metadata) + "\n")
+
+            with self.assertRaisesRegex(ValueError, "training contract"):
+                FULL_TRAINER._resume_state(
+                    checkpoint,
+                    {**contract, "seed": 7},
+                    num_epochs=3,
+                    trust_resume_state=True,
+                    expected_runtime_contract=runtime,
+                )
+            with self.assertRaisesRegex(ValueError, "must exceed"):
+                FULL_TRAINER._resume_state(
+                    checkpoint,
+                    contract,
+                    num_epochs=1,
+                    trust_resume_state=True,
+                    expected_runtime_contract=runtime,
+                )
+            with self.assertRaisesRegex(ValueError, "runtime contract"):
+                FULL_TRAINER._resume_state(
+                    checkpoint,
+                    contract,
+                    num_epochs=3,
+                    trust_resume_state=True,
+                    expected_runtime_contract={**runtime, "python": "3.14.0"},
+                )
+
+    def test_full_sft_training_contract_rejects_manifest_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            train = root / "train.jsonl"
+            qwen = root / "qwen"
+            (qwen / "finetuning").mkdir(parents=True)
+            (qwen / "qwen_tts" / "inference").mkdir(parents=True)
+            (qwen / "finetuning" / "dataset.py").write_text("# dataset\n")
+            (qwen / "qwen_tts" / "inference" / "qwen3_tts_model.py").write_text(
+                "# model loader\n"
+            )
+            train.write_text('{"audio": "train.wav", "text": "one"}\n')
+            args = argparse.Namespace(
+                init_model_path="Qwen/Qwen3-TTS-fixture",
+                qwen_dir=qwen,
+                train_jsonl=train,
+                val_jsonl=None,
+                batch_size=2,
+                eval_batch_size=None,
+                learning_rate=2e-6,
+                gradient_accumulation_steps=4,
+                mixed_precision="bf16",
+                attention="flash_attention_2",
+                speaker_name="fixture",
+                speaker_id=3000,
+                speaker_reference_index=0,
+                seed=42,
+                save_every=1,
+                eval_every=1,
+            )
+            before = FULL_TRAINER._training_contract(args)
+            train.write_text('{"audio": "train.wav", "text": "two"}\n')
+            after = FULL_TRAINER._training_contract(args)
+            self.assertNotEqual(
+                before["train_jsonl"]["sha256"], after["train_jsonl"]["sha256"]
+            )
 
     def test_full_sft_preflight_rejects_dirty_upstream_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
