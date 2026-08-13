@@ -34,6 +34,10 @@
       "purpose": "Content-addressed receipt binding audited splits to the manifests consumed by training."
     },
     {
+      "name": "PERSISTED_PACKAGE_ROOT",
+      "purpose": "Existing external directory for immutable content-addressed lifecycle packages."
+    },
+    {
       "name": "SELECTED_CHECKPOINT_NAME",
       "purpose": "Single safe full-model checkpoint directory created by training and selected for reload."
     },
@@ -93,7 +97,8 @@
       "evaluate/evaluation-bundle.tar"
     ],
     "package": [
-      "package/full-sft-package.tar"
+      "package/full-sft-package.tar",
+      "package/persisted-package.json"
     ]
   },
   "timeout_seconds": {

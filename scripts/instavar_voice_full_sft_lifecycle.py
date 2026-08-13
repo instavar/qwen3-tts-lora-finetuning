@@ -20,6 +20,10 @@ from instavar_voice_lifecycle import (  # noqa: E402
     _capture,
     _extract_archive,
     _git_status_paths,
+    _locked_persistent_package_root,
+    _persist_package,
+    _persistent_package_root,
+    _probe_persistent_package_root,
     _required_path,
     _run,
     _safe_child_name,
@@ -102,6 +106,8 @@ def _preflight() -> None:
         )
     source_revisions = _verify_source_revisions(qwen_dir)
     lineage = _verify_dataset_lineage()
+    persistent_package_root = _persistent_package_root()
+    persistence_probe = _probe_persistent_package_root(persistent_package_root)
     splits = {
         "train": _required_path("TRAIN_JSONL"),
         "validation": _required_path("VAL_JSONL"),
@@ -129,6 +135,8 @@ def _preflight() -> None:
             "corpus_audit": audit,
             "qwen_dir": str(qwen_dir),
             "base_model": os.environ["BASE_MODEL"],
+            "persistent_package_root": str(persistent_package_root),
+            "persistence_probe": persistence_probe,
             "source_revisions": source_revisions,
             "dataset_lineage": lineage,
             "evidence_boundary": (
@@ -284,6 +292,9 @@ def _evaluate() -> None:
 
 def _package() -> None:
     work_dir = _work_dir()
+    preflight = json.loads(
+        (work_dir / "preflight" / "preflight.json").read_text(encoding="utf-8")
+    )
     staging = work_dir / "package" / "staging"
     staging.mkdir(parents=True, exist_ok=False)
     sources = {
@@ -317,9 +328,12 @@ def _package() -> None:
             ),
         },
     )
-    _archive_directory(
-        staging, work_dir / "package" / "full-sft-package.tar", arcname="package"
+    package = work_dir / "package" / "full-sft-package.tar"
+    _archive_directory(staging, package, arcname="package")
+    receipt = _persist_package(
+        package, _locked_persistent_package_root(preflight), "full_sft"
     )
+    _write_json(work_dir / "package" / "persisted-package.json", receipt)
 
 
 def run(stage: str) -> None:

@@ -141,7 +141,9 @@ repository's LoRA and PyTorch declarations to a real five-stage backend. The
 wrapper audits train, validation, and test manifests, runs the existing LoRA
 launcher, archives one explicitly selected adapter, reloads it in a fresh
 process, executes the frozen generation plan, and copies the byte-identical
-adapter archive into the package stage.
+adapter archive into the package stage. Both registered lifecycles also publish
+their final research package under a mode-bound content-addressed name to the
+preflighted external retention directory and write a persistence receipt.
 
 Validate the recipe with the pinned evaluator before a GPU run:
 
@@ -163,6 +165,17 @@ Qwen file against a temporary Git index containing pinned upstream plus
 `patches/0001-qwen3-tts-lora.patch`, and rejects unrelated dirty paths. A passed
 lifecycle proves that the declared commands and artifacts completed without
 mutation. It does not prove perceptual improvement.
+
+Set `PERSISTED_PACKAGE_ROOT` to an existing directory outside the lifecycle
+work directory, companion checkout, Qwen checkout, and any local base-model
+input tree. Preflight verifies fsynced no-overwrite hard-link publication and
+records the resolved path, filesystem device, and directory inode. The package
+stage rechecks that identity, reuses only a byte-identical existing object, and
+writes `package/persisted-package.json`. LoRA and full-SFT names are separated,
+so equal package bytes cannot collapse the two adaptation modes into one object.
+This contract does not prove a real retained model package, remote backup,
+restore, access control, distribution rights, or defense against every
+adversarial filesystem race.
 
 ### Full SFT lifecycle
 

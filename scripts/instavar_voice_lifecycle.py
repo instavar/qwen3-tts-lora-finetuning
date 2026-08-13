@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -23,7 +23,10 @@ def _required_path(name: str, *, directory: bool = False) -> Path:
     value = os.environ.get(name, "").strip()
     if not value:
         raise ValueError(f"{name} is required")
-    path = Path(value).expanduser().resolve()
+    unresolved = Path(value).expanduser()
+    if unresolved.is_symlink():
+        raise FileNotFoundError(f"{name} is a symlink: {unresolved}")
+    path = unresolved.resolve()
     if directory and not path.is_dir():
         raise FileNotFoundError(f"{name} directory not found: {path}")
     if not directory and not path.is_file():
@@ -33,6 +36,92 @@ def _required_path(name: str, *, directory: bool = False) -> Path:
 
 def _work_dir() -> Path:
     return _required_path("INSTAVAR_VOICE_WORK_DIR", directory=True)
+
+
+def _base_model_input_path() -> Path | None:
+    value = os.environ.get("BASE_MODEL", "").strip()
+    if not value:
+        raise ValueError("BASE_MODEL is required")
+    unresolved = Path(value).expanduser()
+    if unresolved.is_symlink():
+        raise ValueError(f"BASE_MODEL must not be a symlink: {unresolved}")
+    return unresolved.resolve() if unresolved.exists() else None
+
+
+def _persistent_package_root() -> Path:
+    root = _required_path("PERSISTED_PACKAGE_ROOT", directory=True)
+    protected = {
+        "lifecycle work directory": _work_dir(),
+        "repository checkout": REPO_ROOT.resolve(),
+        "Qwen checkout": _required_path("QWEN_DIR", directory=True),
+    }
+    base_model = _base_model_input_path()
+    if base_model is not None:
+        protected["local base-model input"] = base_model
+    for label, path in protected.items():
+        if root == path or root.is_relative_to(path):
+            raise ValueError(f"PERSISTED_PACKAGE_ROOT must be outside the {label}")
+    return root
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _probe_persistent_package_root(root: Path) -> dict[str, Any]:
+    probe_path: Path | None = None
+    linked_path: Path | None = None
+    linked_created = False
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=root,
+            prefix=".instavar-voice-persistence-probe.",
+            suffix=".partial",
+            delete=False,
+        ) as probe:
+            probe_path = Path(probe.name)
+            probe.write(b"instavar-voice-persistence-probe-v1\n")
+            probe.flush()
+            os.fsync(probe.fileno())
+        linked_path = probe_path.with_suffix(".linked")
+        os.link(probe_path, linked_path)
+        linked_created = True
+        _fsync_directory(root)
+        if linked_path.read_bytes() != probe_path.read_bytes():
+            raise ValueError("persistent package root failed its atomic publication probe")
+        identity = root.stat()
+        return {
+            "writable": True,
+            "atomic_hard_link": True,
+            "device": identity.st_dev,
+            "inode": identity.st_ino,
+        }
+    except OSError as error:
+        raise ValueError(f"PERSISTED_PACKAGE_ROOT cannot publish an atomic package: {error}") from error
+    finally:
+        if linked_path is not None and linked_created:
+            linked_path.unlink(missing_ok=True)
+        if probe_path is not None:
+            probe_path.unlink(missing_ok=True)
+
+
+def _locked_persistent_package_root(preflight: dict[str, Any]) -> Path:
+    root = _persistent_package_root()
+    recorded_root = preflight.get("persistent_package_root")
+    probe = preflight.get("persistence_probe", {})
+    identity = root.stat()
+    if (
+        recorded_root != str(root)
+        or probe.get("device") != identity.st_dev
+        or probe.get("inode") != identity.st_ino
+    ):
+        raise ValueError("PERSISTED_PACKAGE_ROOT changed after preflight")
+    return root
 
 
 def _stage_result() -> Path:
@@ -53,6 +142,62 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _verify_persisted_package(path: Path, expected_sha256: str) -> None:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+        raise ValueError(f"persisted package is missing, empty, or unsafe: {path}")
+    actual_sha256 = _sha256(path)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(f"persisted package hash mismatch: expected {expected_sha256}, got {actual_sha256}")
+
+
+def _persist_package(source: Path, root: Path, adaptation_mode: str) -> dict[str, Any]:
+    if adaptation_mode not in {"lora", "full_sft"}:
+        raise ValueError("adaptation_mode must be lora or full_sft")
+    if source.is_symlink() or not source.is_file() or source.stat().st_size == 0:
+        raise ValueError(f"package source is missing, empty, or unsafe: {source}")
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(f"persistent package root is missing or unsafe: {root}")
+    package_sha256 = _sha256(source)
+    destination = root / f"qwen3-tts-{adaptation_mode}-package-sha256-{package_sha256}.tar"
+    reused_existing = destination.exists() or destination.is_symlink()
+    if reused_existing:
+        _verify_persisted_package(destination, package_sha256)
+    else:
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=root,
+                prefix=f".{destination.name}.",
+                suffix=".partial",
+                delete=False,
+            ) as target:
+                temporary_path = Path(target.name)
+                with source.open("rb") as package:
+                    shutil.copyfileobj(package, target, length=1024 * 1024)
+                target.flush()
+                os.fsync(target.fileno())
+            _verify_persisted_package(temporary_path, package_sha256)
+            try:
+                os.link(temporary_path, destination)
+            except FileExistsError:
+                reused_existing = True
+            else:
+                _fsync_directory(root)
+            _verify_persisted_package(destination, package_sha256)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+    return {
+        "schema_version": "1.0.0",
+        "adaptation_mode": adaptation_mode,
+        "package_sha256": package_sha256,
+        "package_bytes": source.stat().st_size,
+        "persisted_path": str(destination),
+        "reused_existing": reused_existing,
+    }
 
 
 def _safe_child_name(value: str, *, environment_name: str = "SELECTED_ADAPTER_NAME") -> str:
@@ -103,15 +248,20 @@ def _extract_archive(source: Path, destination: Path, *, arcname: str = "adapter
         members = archive.getmembers()
         if not members:
             raise ValueError("archive is empty")
+        seen: set[str] = set()
         for member in members:
-            member_path = Path(member.name)
-            if not member_path.parts or member_path.parts[0] != arcname:
-                raise ValueError(
-                    f"archive member must be rooted at {arcname!r}: {member.name}"
-                )
-            target = (destination / member.name).resolve()
-            if not target.is_relative_to(destination.resolve()) or member.issym() or member.islnk():
+            member_path = PurePosixPath(member.name)
+            normalized = member_path.as_posix().rstrip("/")
+            if (
+                member_path.is_absolute()
+                or not member_path.parts
+                or member_path.parts[0] != arcname
+                or any(part in {"", ".", ".."} for part in member_path.parts)
+                or normalized in seen
+                or not (member.isdir() or member.isfile())
+            ):
                 raise ValueError(f"unsafe archive member: {member.name}")
+            seen.add(normalized)
         archive.extractall(destination, members=members, filter="data")
     extracted = destination / arcname
     _check_archive_source(extracted)
@@ -251,6 +401,8 @@ def _preflight() -> None:
         raise FileNotFoundError("Qwen companion patches are missing: " + ", ".join(missing))
     source_revisions = _verify_source_revisions(qwen_dir)
     lineage = _verify_dataset_lineage()
+    persistent_package_root = _persistent_package_root()
+    persistence_probe = _probe_persistent_package_root(persistent_package_root)
     splits = {
         "train": _required_path("TRAIN_JSONL"),
         "validation": _required_path("VAL_JSONL"),
@@ -277,6 +429,8 @@ def _preflight() -> None:
             "corpus_audit": audit,
             "qwen_dir": str(qwen_dir),
             "base_model": os.environ["BASE_MODEL"],
+            "persistent_package_root": str(persistent_package_root),
+            "persistence_probe": persistence_probe,
             "source_revisions": source_revisions,
             "dataset_lineage": lineage,
         },
@@ -389,6 +543,7 @@ def _evaluate() -> None:
 
 def _package() -> None:
     work_dir = _work_dir()
+    preflight = json.loads((work_dir / "preflight" / "preflight.json").read_text(encoding="utf-8"))
     staging = work_dir / "package" / "staging"
     staging.mkdir(parents=True, exist_ok=False)
     sources = {
@@ -417,6 +572,10 @@ def _package() -> None:
     )
     destination = work_dir / "package" / "adapter-package.tar"
     _archive_directory(staging, destination, arcname="package")
+    receipt = _persist_package(
+        destination, _locked_persistent_package_root(preflight), "lora"
+    )
+    _write_json(work_dir / "package" / "persisted-package.json", receipt)
 
 
 def run(stage: str) -> None:

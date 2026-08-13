@@ -2,7 +2,9 @@
 
 This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The LoRA recipe in [`instavar-voice-backend.json`](instavar-voice-backend.json), the experimental full-SFT recipe in [`instavar-voice-backend-full-sft.json`](instavar-voice-backend-full-sft.json), and [`instavar-voice-backend-registry.json`](instavar-voice-backend-registry.json) use the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to commit `8feadf7bbda75abe1c305c63e362c41b86451cda`.
 
-The backend runs corpus audit, content-addressed dataset-lineage verification, the existing LoRA launcher, fresh-process reload, frozen-plan evaluation, and adapter packaging through one fail-closed lifecycle. It verifies lineage before and after preflight and training so an audited manifest cannot be silently substituted between those stages. CI validates the binding and exercises dependency-free wrapper behavior; it does not run GPU training.
+The backend runs corpus audit, content-addressed dataset-lineage verification, the existing LoRA launcher, fresh-process reload, frozen-plan evaluation, adapter packaging, and mode-bound content-addressed external retention through one fail-closed lifecycle. It verifies lineage before and after preflight and training so an audited manifest cannot be silently substituted between those stages. CI validates the binding and exercises dependency-free wrapper behavior; it does not run GPU training.
+
+Both LoRA and full-SFT preflight require a persistence root outside work, source, upstream, and any local base-model input tree. They probe fsynced no-overwrite hard-link publication and bind the root's resolved path, filesystem device, and directory inode through packaging. Existing content-addressed objects are reused only when their bytes match. This establishes retention mechanics, not a real retained package, backup, restore, access control, rights approval, or complete hostile-filesystem defense.
 
 The full-SFT backend applies the same audit and evidence chain to a full model.
 Its companion-owned trainer keeps the known text-projection and label-alignment
@@ -13,7 +15,7 @@ state-content, and target-epoch drift, requires explicit trust acknowledgement,
 excludes optimizer-bearing state from inference packages, and fails closed when
 more than one process is requested. The full-SFT
 capability and `pytorch_full_sft` runtime remain `experimental` and `not_run`.
-Dependency-free tests prove routing and packaging behavior only. They do not
+Dependency-free tests prove routing, packaging, and retention behavior only. They do not
 prove that the model trains, reloads, fits GPU memory, or improves speech.
 They also do not establish real interrupted-run restoration, mid-epoch resume,
 or resume across dependency versions.

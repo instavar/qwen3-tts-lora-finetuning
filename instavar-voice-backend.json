@@ -13,6 +13,7 @@
     { "name": "VAL_JSONL", "purpose": "Held-out validation manifest from the same grouped corpus split." },
     { "name": "TEST_JSONL", "purpose": "Held-out test manifest from the same grouped corpus split." },
     { "name": "DATASET_LINEAGE", "purpose": "Content-addressed receipt binding audited splits to the manifests consumed by training." },
+    { "name": "PERSISTED_PACKAGE_ROOT", "purpose": "Existing external directory for immutable content-addressed lifecycle packages." },
     { "name": "SELECTED_ADAPTER_NAME", "purpose": "Single safe child directory created by training and selected for reload." },
     { "name": "GENERATION_PLAN", "purpose": "Frozen Instavar Voice generation plan containing this candidate." },
     { "name": "CANDIDATE_ID", "purpose": "Candidate identifier present in the frozen generation plan." }
@@ -29,7 +30,7 @@
     "train": ["train/selected-adapter.tar"],
     "infer": ["infer/candidate.wav"],
     "evaluate": ["evaluate/evaluation-bundle.tar"],
-    "package": ["package/adapter-package.tar"]
+    "package": ["package/adapter-package.tar", "package/persisted-package.json"]
   },
   "timeout_seconds": {
     "preflight": 300,
