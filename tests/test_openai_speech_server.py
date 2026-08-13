@@ -565,6 +565,20 @@ class BindingSecurityTests(unittest.TestCase):
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_loaded_voice_must_exist_before_ready_state(self) -> None:
+        class FakeTTS:
+            def get_supported_speakers(self) -> list[str]:
+                return ["female01"]
+
+            def get_supported_languages(self) -> list[str]:
+                return ["auto", "english"]
+
+        server.validate_loaded_voice(FakeTTS(), speaker_name="FEMALE01", language="auto")
+        with self.assertRaisesRegex(ValueError, "not registered"):
+            server.validate_loaded_voice(FakeTTS(), speaker_name="speaker", language="auto")
+        with self.assertRaisesRegex(ValueError, "not supported"):
+            server.validate_loaded_voice(FakeTTS(), speaker_name="female01", language="klingon")
+
     def test_engine_requires_exactly_one_artifact_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
