@@ -27,6 +27,14 @@ a registered scheduler, real Accelerate checkpoints do not contain the
 `scheduler*.bin` role required by the mapper, even though synthetic mapper
 tests can construct one.
 
+The first real five-role comparison found another ordering defect. Four roles
+matched byte-for-byte, but CPU Torch RNG did not. The resumed process restored
+checkpoint RNG and then rebuilt the canonical speaker embedding, which creates
+a DataLoader iterator and consumes CPU RNG at a point the uninterrupted path
+does not revisit. The trainer now derives that initial speaker embedding before
+loading resume state, so the restored RNG is the final boundary before resumed
+epoch work begins.
+
 `trainer-state.json` records completed epochs, epoch index, microbatch count,
 optimizer-step count, and training seed. Runtime diagnostics such as elapsed
 time and peak memory remain in the broader metadata and are not treated as
@@ -39,6 +47,8 @@ Dependency-free tests cover:
 - one complete five-role mapping;
 - source-level creation, Accelerate registration, and optimizer-step-aligned
   advancement of the constant scheduler;
+- source-level ordering of initial speaker-embedding derivation before resume
+  restoration;
 - ambiguous single-process RNG files;
 - cross-role optimizer and scheduler hardlinks;
 - metadata-bound Accelerate state mutation;

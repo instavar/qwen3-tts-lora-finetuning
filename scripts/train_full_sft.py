@@ -731,8 +731,6 @@ def main() -> int:
                 scheduler,
             )
         )
-    if resume_state is not None:
-        accelerator.load_state(resume_state)
     speaker_embedding = _canonical_speaker_embedding(
         model,
         train_dataset,
@@ -741,6 +739,8 @@ def main() -> int:
         torch,
         DataLoader,
     )
+    if resume_state is not None:
+        accelerator.load_state(resume_state)
 
     model.train()
     for epoch in range(start_epoch, args.num_epochs):

@@ -466,6 +466,12 @@ class LifecycleBackendTests(unittest.TestCase):
             source,
         )
 
+    def test_full_sft_restores_rng_after_initial_speaker_embedding(self) -> None:
+        source = (ROOT / "scripts" / "train_full_sft.py").read_text()
+        embedding = source.index("speaker_embedding = _canonical_speaker_embedding(")
+        restore = source.index("accelerator.load_state(resume_state)")
+        self.assertLess(embedding, restore)
+
     def test_full_sft_resume_rejects_contract_drift_and_completed_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -277,6 +277,12 @@ only a synthetic fixture, contains the independently addressable scheduler
 state required by evaluator 0.45. Its type and step interval are part of the
 training contract.
 
+On resume, the trainer derives the canonical initial speaker embedding before
+restoring the checkpoint. Building its one-row DataLoader iterator consumes CPU
+Torch RNG, so doing it after restoration would introduce resume-only RNG drift.
+The checkpoint load is therefore the final RNG boundary before resumed epoch
+work begins.
+
 Older Accelerate checkpoints without `trainer-state.json` remain resumable
 under their original metadata contract, but they are not eligible for the 0.45
 claim tier. The bounded GPU continuation predates schema 1.1 live-conditioning
