@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/qwen3-tts-lora-finetuning",
     "url": "https://github.com/instavar/qwen3-tts-lora-finetuning",
-    "evidence_revision": "ff0af6d811173ae975bed2fd2e9b04942575c7b5"
+    "evidence_revision": "5469f4105dc3464dcbc70290e6f8bfb42726e637"
   },
   "model": {
     "family": "Qwen3-TTS",
@@ -156,7 +156,12 @@
             {
               "level": "repository_declared",
               "ref": "reports/resume-evaluator-045-instrumentation-2026-08-14.md",
-              "claim": "Future full-SFT checkpoints expose five independently addressable final-state roles with live metadata and hardlink checks."
+              "claim": "Full-SFT checkpoints expose five independently addressable final-state roles with live metadata and hardlink checks."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/full-sft-resume-live-conditioned-gpu-2026-08-14.md",
+              "claim": "A fresh evaluator 0.45 RTX 3090 Ti pair produced byte-identical model, optimizer, scheduler, trainer, and RNG roles after a real epoch-boundary process interruption and separate resume."
             }
           ],
           "boundary": "Only a same-host, same-version, single-process epoch-boundary resume was tested. Mid-epoch, cross-version, distributed, and untrusted resume remain unsupported."
@@ -420,7 +425,7 @@
     "The full-SFT path has one bounded two-step GPU train and resume, fresh reload, and ten-row generation smoke; full-corpus training, convergence, and quality remain unrecorded.",
     "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
     "Full SFT epoch-boundary resume has one same-host, same-version interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
-    "The retained GPU continuation predates evaluator 0.45 live-conditioning receipts and the new trainer-state file; a fresh paired run is required for the stronger byte-exact claim tier.",
+    "Full SFT has one tiny evaluator 0.45 RTX 3090 Ti epoch-boundary pair; longer, accumulated-gradient, mid-epoch, stochastic-worker, cross-version, and distributed equivalence remain untested.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
     "The full-SFT HTTP reference server has one exact CLI and restart row plus one valid instruction-bearing row; sustained load, disconnect cancellation, timeout, OOM recovery, multi-worker behavior, real gateway behavior, and perceptual quality remain untested.",
     "The LoRA HTTP path has one exact long-form CLI and restart parity result, but no clean-source, multi-seed, perceptual, sustained-load, cancellation, OOM, gateway, or unmerged-adapter qualification.",

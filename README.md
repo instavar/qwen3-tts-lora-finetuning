@@ -283,6 +283,16 @@ Torch RNG, so doing it after restoration would introduce resume-only RNG drift.
 The checkpoint load is therefore the final RNG boundary before resumed epoch
 work begins.
 
+Companion revision `5469f4105dc3464dcbc70290e6f8bfb42726e637`
+completed a fresh evaluator 0.45 RTX 3090 Ti pair after those corrections. A
+real process-group `SIGTERM` after epoch zero left no epoch-one or partial
+checkpoint, and a separate process resumed to epoch one. All five final roles
+were byte-identical at `byte_exact_live_conditioned_artifact_set`. The first
+attempt's CPU RNG mismatch remains a negative control. See
+[`reports/full-sft-resume-live-conditioned-gpu-2026-08-14.md`](reports/full-sft-resume-live-conditioned-gpu-2026-08-14.md).
+The evaluator does not prove training semantics, numerical equivalence, or
+quality, and this paired experiment generated no audio.
+
 Older Accelerate checkpoints without `trainer-state.json` remain resumable
 under their original metadata contract, but they are not eligible for the 0.45
 claim tier. The bounded GPU continuation predates schema 1.1 live-conditioning

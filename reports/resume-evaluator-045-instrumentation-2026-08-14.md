@@ -64,18 +64,18 @@ The public contract workflow pins evaluator revision
 `29c38cfd86b889abc8b79df063c817dd8f684903` and verifies the live-conditioning
 receipt and comparison APIs.
 
-## Evidence boundary
+## Live follow-up and evidence boundary
 
-No model training or GPU test was run for this instrumentation change. The
-retained two-step CUDA continuation predates both the new trainer-state file and
-schema 1.1 live-conditioning receipts. It is not upgraded.
+Companion revision `5469f4105dc3464dcbc70290e6f8bfb42726e637`
+subsequently completed a fresh uninterrupted and interrupted-resumed RTX 3090
+Ti pair. Evaluator 0.45 rehashed the Base tree, dataset lineage, training
+controls, initial-state receipt, interruption receipt, and five final roles.
+Every final role was byte-identical and the report reached
+`byte_exact_live_conditioned_artifact_set`. See
+[`full-sft-resume-live-conditioned-gpu-2026-08-14.md`](full-sft-resume-live-conditioned-gpu-2026-08-14.md).
 
-A stronger comparison must preregister and fingerprint the Base artifact,
-dataset-lineage receipt, training controls, and initial state. It then needs an
-independent uninterrupted run and an observed interrupted-resumed run that both
-reach the same target update. Evaluator 0.45 rehashes the four conditioning
-artifacts and the five final-state roles before comparing them.
-
-Even a passing report proves only byte equality for those declared files. It
-does not prove trainer semantics, hidden floating-point equivalence, quality,
-adaptation benefit, cross-version resume, or distributed resume.
+This does not upgrade the older retained continuation. The passing result is a
+new bounded experiment on the exact tested commits and runtime. It proves only
+byte equality for the declared files. It does not prove trainer semantics,
+hidden floating-point equivalence, quality, adaptation benefit, cross-version
+resume, or distributed resume.
