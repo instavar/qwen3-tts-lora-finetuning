@@ -228,6 +228,10 @@ def _training_contract(args: argparse.Namespace) -> dict:
         "train_row_limit": getattr(args, "train_row_limit", 0),
         "validation_row_limit": getattr(args, "validation_row_limit", 0),
         "learning_rate": args.learning_rate,
+        "scheduler": {
+            "type": "constant_lambda",
+            "step_interval": "optimizer_step",
+        },
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "mixed_precision": args.mixed_precision,
         "attention": args.attention,
@@ -709,16 +713,23 @@ def main() -> int:
 
     model = tts.model
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=0.01)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda _: 1.0,
+    )
     if validation_loader is None:
-        model, optimizer, train_loader = accelerator.prepare(
-            model, optimizer, train_loader
+        model, optimizer, train_loader, scheduler = accelerator.prepare(
+            model, optimizer, train_loader, scheduler
         )
     else:
-        model, optimizer, train_loader, validation_loader = accelerator.prepare(
-            model,
-            optimizer,
-            train_loader,
-            validation_loader,
+        model, optimizer, train_loader, validation_loader, scheduler = (
+            accelerator.prepare(
+                model,
+                optimizer,
+                train_loader,
+                validation_loader,
+                scheduler,
+            )
         )
     if resume_state is not None:
         accelerator.load_state(resume_state)
@@ -743,6 +754,8 @@ def main() -> int:
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
+                if accelerator.sync_gradients:
+                    scheduler.step()
                 optimizer.zero_grad()
             epoch_losses.append(float(loss.detach().item()))
             if accelerator.sync_gradients:

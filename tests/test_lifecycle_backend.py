@@ -452,6 +452,20 @@ class LifecycleBackendTests(unittest.TestCase):
         self.assertIn('trainer_state_path = output_dir / "trainer-state.json"', source)
         self.assertIn('"trainer_state": _file_manifest(', source)
 
+    def test_full_sft_registers_and_steps_constant_scheduler(self) -> None:
+        source = (ROOT / "scripts" / "train_full_sft.py").read_text()
+        self.assertIn('"type": "constant_lambda"', source)
+        self.assertIn("torch.optim.lr_scheduler.LambdaLR(", source)
+        self.assertIn(
+            "model, optimizer, train_loader, scheduler = accelerator.prepare(",
+            source,
+        )
+        self.assertIn("validation_loader, scheduler = (", source)
+        self.assertIn(
+            "if accelerator.sync_gradients:\n                    scheduler.step()",
+            source,
+        )
+
     def test_full_sft_resume_rejects_contract_drift_and_completed_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

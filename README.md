@@ -270,6 +270,13 @@ the five independent file roles required by Instavar Voice evaluator 0.45.
 `evaluator_full_sft_artifact_paths(...)` rechecks the live metadata-bound bytes
 and rejects missing or ambiguous state and cross-role hardlinks.
 
+The trainer creates an explicit constant `LambdaLR`, registers it with
+Accelerate, and advances it only on optimizer updates. The schedule leaves the
+configured learning rate unchanged while ensuring that a real checkpoint, not
+only a synthetic fixture, contains the independently addressable scheduler
+state required by evaluator 0.45. Its type and step interval are part of the
+training contract.
+
 Older Accelerate checkpoints without `trainer-state.json` remain resumable
 under their original metadata contract, but they are not eligible for the 0.45
 claim tier. The bounded GPU continuation predates schema 1.1 live-conditioning

@@ -20,6 +20,13 @@ The mapper rehashes the complete Accelerate state against checkpoint metadata,
 rehashes trainer state against its own metadata record, and then requires one
 file for every role. Cross-role hardlinks are rejected.
 
+The full-SFT trainer now also creates an explicit constant `LambdaLR`, registers
+it with Accelerate, steps it exactly when an optimizer update completes, and
+binds that schedule into the training contract. This is load-bearing: without
+a registered scheduler, real Accelerate checkpoints do not contain the
+`scheduler*.bin` role required by the mapper, even though synthetic mapper
+tests can construct one.
+
 `trainer-state.json` records completed epochs, epoch index, microbatch count,
 optimizer-step count, and training seed. Runtime diagnostics such as elapsed
 time and peak memory remain in the broader metadata and are not treated as
@@ -30,6 +37,8 @@ deterministic trainer state.
 Dependency-free tests cover:
 
 - one complete five-role mapping;
+- source-level creation, Accelerate registration, and optimizer-step-aligned
+  advancement of the constant scheduler;
 - ambiguous single-process RNG files;
 - cross-role optimizer and scheduler hardlinks;
 - metadata-bound Accelerate state mutation;
