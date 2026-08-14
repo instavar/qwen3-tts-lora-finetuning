@@ -133,6 +133,58 @@ def _tree_manifest(root: Path) -> dict:
     }
 
 
+def _file_manifest(path: Path, *, root: Path) -> dict:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"evidence file is missing or unsafe: {path}")
+    return {
+        "path": path.relative_to(root).as_posix(),
+        "sha256": _sha256(path),
+        "bytes": path.stat().st_size,
+    }
+
+
+def evaluator_full_sft_artifact_paths(checkpoint: Path) -> dict[str, Path]:
+    """Map a new single-process checkpoint to evaluator 0.45 state roles."""
+    unresolved = checkpoint.expanduser()
+    if unresolved.is_symlink():
+        raise ValueError("evaluator checkpoint must not be a symlink")
+    resolved = unresolved.resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"evaluator checkpoint is missing: {resolved}")
+
+    metadata_path = resolved / "instavar-full-sft-metadata.json"
+    if metadata_path.is_symlink() or not metadata_path.is_file():
+        raise FileNotFoundError(f"resume metadata is missing or unsafe: {metadata_path}")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("schema_version") != "1.2.0":
+        raise ValueError("evaluator mapping requires metadata schema 1.2.0")
+    if metadata.get("adaptation_mode") != "full_sft":
+        raise ValueError("evaluator mapping requires full_sft metadata")
+
+    state_root = resolved / "resume-state"
+    if metadata.get("resume_state") != _tree_manifest(state_root):
+        raise ValueError("resume-state content does not match checkpoint metadata")
+    trainer_state = resolved / "trainer-state.json"
+    if metadata.get("trainer_state") != _file_manifest(trainer_state, root=resolved):
+        raise ValueError("trainer state does not match checkpoint metadata")
+
+    candidates = {
+        "model_state": sorted(state_root.glob("model*.safetensors")),
+        "optimizer_state": sorted(state_root.glob("optimizer*.bin")),
+        "scheduler_state": sorted(state_root.glob("scheduler*.bin")),
+        "rng_state": sorted(state_root.glob("random_states*.pkl")),
+    }
+    for role, paths in candidates.items():
+        if len(paths) != 1:
+            raise ValueError(f"evaluator mapping needs exactly one {role} file")
+    artifacts = {role: paths[0] for role, paths in candidates.items()}
+    artifacts["trainer_state"] = trainer_state
+    identities = [(path.stat().st_dev, path.stat().st_ino) for path in artifacts.values()]
+    if len(identities) != len(set(identities)):
+        raise ValueError("evaluator artifact roles must not share hardlinks")
+    return artifacts
+
+
 def _training_contract(args: argparse.Namespace) -> dict:
     train_jsonl = args.train_jsonl.resolve()
     val_jsonl = args.val_jsonl.resolve() if args.val_jsonl else None
@@ -481,6 +533,19 @@ def _save_checkpoint(
     output_dir.mkdir(parents=True, exist_ok=False)
     accelerator.save_state(output_dir / "resume-state", safe_serialization=True)
     resume_state_manifest = _tree_manifest(output_dir / "resume-state")
+    trainer_state = {
+        "schema_version": "1.0.0",
+        "completed_epochs": completed_epochs,
+        "epoch_index": training_observation["epoch_index"],
+        "microbatches": training_observation["microbatches"],
+        "optimizer_steps": training_observation["optimizer_steps"],
+        "training_seed": training_seed,
+    }
+    trainer_state_path = output_dir / "trainer-state.json"
+    trainer_state_path.write_text(
+        json.dumps(trainer_state, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     speech_tokenizer_manifest = _copy_speech_tokenizer(
         speech_tokenizer_source, output_dir / "speech_tokenizer"
     )
@@ -504,6 +569,7 @@ def _save_checkpoint(
         "training_observation": training_observation,
         "resume_provenance": resume_provenance,
         "resume_state": resume_state_manifest,
+        "trainer_state": _file_manifest(trainer_state_path, root=output_dir),
         "speech_tokenizer": speech_tokenizer_manifest,
         "distributed_processes": accelerator.num_processes,
         "evidence_boundary": (

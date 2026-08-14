@@ -152,6 +152,11 @@
               "level": "smoke_tested",
               "ref": "reports/full-sft-bounded-gpu-2026-08-14.md",
               "claim": "The first checkpoint resumed from content-verified optimizer and RNG state, and the resumed checkpoint preserved a loadable custom-voice config plus its speech tokenizer."
+            },
+            {
+              "level": "repository_declared",
+              "ref": "reports/resume-evaluator-045-instrumentation-2026-08-14.md",
+              "claim": "Future full-SFT checkpoints expose five independently addressable final-state roles with live metadata and hardlink checks."
             }
           ],
           "boundary": "Only a same-host, same-version, single-process epoch-boundary resume was tested. Mid-epoch, cross-version, distributed, and untrusted resume remain unsupported."
@@ -415,6 +420,7 @@
     "The full-SFT path has one bounded two-step GPU train and resume, fresh reload, and ten-row generation smoke; full-corpus training, convergence, and quality remain unrecorded.",
     "Full SFT intentionally rejects multi-process execution until distributed checkpoint semantics are reproduced.",
     "Full SFT epoch-boundary resume has one same-host, same-version interrupted GPU continuation; mid-epoch, distributed, and cross-version resume remain unsupported.",
+    "The retained GPU continuation predates evaluator 0.45 live-conditioning receipts and the new trainer-state file; a fresh paired run is required for the stronger byte-exact claim tier.",
     "Run real LoRA and full-SFT lifecycle packages through managed backup and verified restore after completing model, dataset, speaker, and generated-output rights review.",
     "The full-SFT HTTP reference server has one exact CLI and restart row plus one valid instruction-bearing row; sustained load, disconnect cancellation, timeout, OOM recovery, multi-worker behavior, real gateway behavior, and perceptual quality remain untested.",
     "The LoRA HTTP path has one exact long-form CLI and restart parity result, but no clean-source, multi-seed, perceptual, sustained-load, cancellation, OOM, gateway, or unmerged-adapter qualification.",

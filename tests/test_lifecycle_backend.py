@@ -393,6 +393,65 @@ class LifecycleBackendTests(unittest.TestCase):
                     expected_runtime_contract=runtime,
                 )
 
+    def test_full_sft_evaluator_roles_are_live_bound_and_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def checkpoint(name: str, *, extra_rng: bool = False, hardlink: bool = False):
+                candidate = root / name
+                state = candidate / "resume-state"
+                state.mkdir(parents=True)
+                (state / "model.safetensors").write_bytes(b"model")
+                (state / "optimizer.bin").write_bytes(b"optimizer")
+                if hardlink:
+                    os.link(state / "optimizer.bin", state / "scheduler.bin")
+                else:
+                    (state / "scheduler.bin").write_bytes(b"scheduler")
+                (state / "random_states_0.pkl").write_bytes(b"rng")
+                if extra_rng:
+                    (state / "random_states_1.pkl").write_bytes(b"other-rng")
+                trainer = candidate / "trainer-state.json"
+                trainer.write_text('{"completed_epochs":2}\n')
+                metadata = {
+                    "schema_version": "1.2.0",
+                    "adaptation_mode": "full_sft",
+                    "resume_state": FULL_TRAINER._tree_manifest(state),
+                    "trainer_state": FULL_TRAINER._file_manifest(
+                        trainer, root=candidate
+                    ),
+                }
+                (candidate / "instavar-full-sft-metadata.json").write_text(
+                    json.dumps(metadata) + "\n"
+                )
+                return candidate
+
+            complete = checkpoint("complete")
+            artifacts = FULL_TRAINER.evaluator_full_sft_artifact_paths(complete)
+            self.assertEqual(
+                {role: path.name for role, path in artifacts.items()},
+                {
+                    "model_state": "model.safetensors",
+                    "optimizer_state": "optimizer.bin",
+                    "scheduler_state": "scheduler.bin",
+                    "rng_state": "random_states_0.pkl",
+                    "trainer_state": "trainer-state.json",
+                },
+            )
+
+            with self.assertRaisesRegex(ValueError, "exactly one rng_state"):
+                FULL_TRAINER.evaluator_full_sft_artifact_paths(
+                    checkpoint("ambiguous", extra_rng=True)
+                )
+            with self.assertRaisesRegex(ValueError, "must not share hardlinks"):
+                FULL_TRAINER.evaluator_full_sft_artifact_paths(
+                    checkpoint("hardlinked", hardlink=True)
+                )
+
+    def test_full_sft_checkpoint_writes_bound_trainer_state(self) -> None:
+        source = (ROOT / "scripts" / "train_full_sft.py").read_text()
+        self.assertIn('trainer_state_path = output_dir / "trainer-state.json"', source)
+        self.assertIn('"trainer_state": _file_manifest(', source)
+
     def test_full_sft_resume_rejects_contract_drift_and_completed_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

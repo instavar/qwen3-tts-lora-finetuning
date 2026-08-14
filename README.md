@@ -263,6 +263,19 @@ downloaded state directory. Resume is supported only between completed epochs
 in one process and the same dependency environment; mid-epoch, distributed,
 and cross-version equivalence remain unverified.
 
+Future full-SFT checkpoints also write a metadata-bound `trainer-state.json`
+with deterministic epoch-boundary progress. Together with the single model,
+optimizer, scheduler, and random-state files under `resume-state`, this exposes
+the five independent file roles required by Instavar Voice evaluator 0.45.
+`evaluator_full_sft_artifact_paths(...)` rechecks the live metadata-bound bytes
+and rejects missing or ambiguous state and cross-role hardlinks.
+
+Older Accelerate checkpoints without `trainer-state.json` remain resumable
+under their original metadata contract, but they are not eligible for the 0.45
+claim tier. The bounded GPU continuation predates schema 1.1 live-conditioning
+receipts and is not upgraded. See
+[`reports/resume-evaluator-045-instrumentation-2026-08-14.md`](reports/resume-evaluator-045-instrumentation-2026-08-14.md).
+
 The lifecycle excludes `resume-state` from the selected inference archive and
 research package. This avoids distributing optimizer-bearing state and prevents
 the full training snapshot from being mistaken for the reloadable inference
@@ -428,7 +441,7 @@ Apache-2.0
 
 ## Instavar Voice conformance
 
-[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) declares the adaptation, runtime, evaluation, and rights boundaries supported by this companion. CI validates it against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). New lifecycle runs should use evaluator commit `8c0fb66a592c73f801a289aabd242e03a6849115` or a deliberately reviewed successor so POSIX stage timeouts clean the complete process group. This does not retroactively upgrade earlier run evidence. See [`INSTAVAR_VOICE_CONFORMANCE.md`](INSTAVAR_VOICE_CONFORMANCE.md) for the evidence interpretation rules and local validation command.
+[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) declares the adaptation, runtime, evaluation, and rights boundaries supported by this companion. CI validates it against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). New lifecycle and resume-evidence runs should use evaluator commit `29c38cfd86b889abc8b79df063c817dd8f684903` or a deliberately reviewed successor so POSIX stage timeouts clean the complete process group and schema 1.1 receipts bind live conditioning artifacts. This does not retroactively upgrade earlier run evidence. See [`INSTAVAR_VOICE_CONFORMANCE.md`](INSTAVAR_VOICE_CONFORMANCE.md) for the evidence interpretation rules and local validation command.
 
 The pinned evaluator provides schema 1.3 frozen speaker-reference assignments,
 the optional schema 1.4 SpeechBrain ECAPA execution path, and the optional
